@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from pce.shared.constants import DEFAULT_LAYERS
 from pce.shared.models import Action, Exit, Hotspot, NPC, ProjectConfig, SceneConfig, SpawnPoint
 from pce.shared.serialization import autosave_project, create_project, load_project, load_scenes, save_project
+from pce.shared.schema import scene_from_dict
 from pce.shared.validation import ValidationIssue, validate_project
 
 
@@ -53,6 +56,7 @@ class ProjectController:
     def create_scene(self, scene_id: str) -> None:
         if self.project is None:
             raise ValueError("No project is open.")
+        scene_id = self._clean_id(scene_id or "scene")
         scene_path = f"scenes/{scene_id}.json"
         if scene_path not in self.project.scenes:
             self.project.scenes.append(scene_path)
@@ -61,6 +65,7 @@ class ProjectController:
             id=scene_id,
             name=scene_id.replace("_", " ").title(),
             background=f"assets/backgrounds/{scene_id}.png",
+            layers=scene_from_dict({"layers": DEFAULT_LAYERS}).layers,
             spawns=[SpawnPoint(id="start", position=(120, 400), facing="right")],
         )
         self.current_scene_id = scene_id
@@ -76,6 +81,11 @@ class ProjectController:
                 on_click=[Action(type="say", speaker="Player", text="There is something here.")],
             )
         )
+
+    def add_spawn(self) -> None:
+        scene = self._require_scene()
+        number = len(scene.spawns) + 1
+        scene.spawns.append(SpawnPoint(id=f"spawn_{number}", position=(160, 390), facing="right"))
 
     def add_exit(self) -> None:
         scene = self._require_scene()
@@ -106,6 +116,52 @@ class ProjectController:
                 on_click=[Action(type="dialogue", npc=npc_id)],
             )
         )
+
+    def import_asset(self, source: Path, asset_kind: str) -> str:
+        if self.project_root is None:
+            raise ValueError("No project is open.")
+        if not source.exists():
+            raise FileNotFoundError(f"Asset does not exist: {source}")
+        folder = {
+            "background": "assets/backgrounds",
+            "sprite": "assets/sprites",
+            "ui": "assets/ui",
+        }.get(asset_kind, "assets/ui")
+        target_dir = self.project_root / folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / source.name
+        if source.resolve() != target.resolve():
+            shutil.copy2(source, target)
+        return target.relative_to(self.project_root).as_posix()
+
+    def assign_scene_background(self, relative_path: str) -> None:
+        scene = self._require_scene()
+        scene.background = relative_path
+
+    def assign_player_sprite(self, relative_path: str) -> None:
+        if self.project is None:
+            raise ValueError("No project is open.")
+        self.project.player.sprite = relative_path
+
+    def assign_npc_sprite(self, npc_id: str, relative_path: str) -> None:
+        scene = self._require_scene()
+        for npc in scene.npcs:
+            if npc.id == npc_id:
+                npc.sprite = relative_path
+                return
+        raise ValueError(f"Unknown NPC: {npc_id}")
+
+    def set_current_scene_as_start(self) -> None:
+        if self.project is None or self.current_scene_id is None:
+            raise ValueError("No project is open.")
+        self.project.start_scene = self.current_scene_id
+        self.project.player.default_scene = self.current_scene_id
+
+    @staticmethod
+    def _clean_id(value: str) -> str:
+        cleaned = "".join(char.lower() if char.isalnum() else "_" for char in value.strip())
+        cleaned = "_".join(part for part in cleaned.split("_") if part)
+        return cleaned or "item"
 
     def run_runtime(self, scene_id: str | None = None) -> subprocess.Popen:
         if self.project_root is None:

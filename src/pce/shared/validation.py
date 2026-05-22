@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from pce.shared.asset_paths import normalize_relative_path, project_path
+from pce.shared.asset_paths import project_path
 from pce.shared.constants import SCHEMA_VERSION
 from pce.shared.models import Action, ProjectConfig, SceneConfig, Severity, ValidationIssue
 from pce.shared.serialization import load_project, load_scenes

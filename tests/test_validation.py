@@ -39,3 +39,21 @@ def test_detects_missing_asset_paths(sample_project: Path) -> None:
     (sample_project / "assets/sprites/dog.png").unlink()
     assert "MISSING_NPC_SPRITE" in _codes(sample_project)
 
+
+def test_detects_missing_item_definition(sample_project: Path) -> None:
+    path = sample_project / "scenes/town_square.json"
+    path.write_text(path.read_text(encoding="utf-8").replace('"item_id": "clubhouse_key"', '"item_id": "missing"'), encoding="utf-8")
+    assert "MISSING_ITEM_DEFINITION" in _codes(sample_project)
+
+
+def test_detects_broken_dialogue_node(sample_project: Path) -> None:
+    path = sample_project / "scenes/town_square.json"
+    path.write_text(path.read_text(encoding="utf-8").replace('"target": "hint"', '"target": "missing"'), encoding="utf-8")
+    assert "MISSING_DIALOGUE_NODE" in _codes(sample_project)
+
+
+def test_detects_invalid_variable_name(sample_project: Path) -> None:
+    path = sample_project / "scenes/town_square.json"
+    path.write_text(path.read_text(encoding="utf-8").replace('"variable": "found_key"', '"variable": "1bad"'), encoding="utf-8")
+    assert "INVALID_VARIABLE_NAME" in _codes(sample_project)
+

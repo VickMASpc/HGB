@@ -6,14 +6,20 @@ from pce.runtime.actions import ActionRunner, RuntimeContext
 from pce.runtime.dialogue import DialogueSystem
 from pce.runtime.player import Player
 from pce.runtime.scene_manager import SceneManager
-from pce.shared.models import Action
+from pce.shared.models import Action, Condition, RuntimeState
 from pce.shared.serialization import load_project, load_scenes
 
 
 def _runner(sample_project: Path) -> tuple[ActionRunner, RuntimeContext]:
     project = load_project(sample_project)
     manager = SceneManager(project, load_scenes(sample_project, project))
-    context = RuntimeContext(manager, Player(manager.spawn_position()), DialogueSystem())
+    context = RuntimeContext(
+        project,
+        manager,
+        Player(manager.spawn_position()),
+        DialogueSystem(),
+        RuntimeState(manager.current_scene_id, manager.spawn_position()),
+    )
     return ActionRunner(context), context
 
 
@@ -69,4 +75,36 @@ def test_change_scene_updates_scene_manager(sample_project: Path) -> None:
     runner.start([Action(type="change_scene", scene="clubhouse", spawn="entrance")])
     assert context.scene_manager.current_scene_id == "clubhouse"
     assert context.player.position == (120, 390)
+
+
+def test_stateful_actions_update_inventory_variables_and_objects(sample_project: Path) -> None:
+    runner, context = _runner(sample_project)
+    runner.start(
+        [
+            Action(type="give_item", item="clubhouse_key"),
+            Action(type="set_variable", variable="found_key", value=True),
+            Action(type="set_object_enabled", object_id="mailbox_key", enabled=False),
+        ]
+    )
+    runner.update()
+    assert "clubhouse_key" in context.state.inventory
+    assert context.state.variables["found_key"] is True
+    assert context.state.object_enabled["town_square:mailbox_key"] is False
+
+
+def test_conditional_action_uses_runtime_state(sample_project: Path) -> None:
+    runner, context = _runner(sample_project)
+    context.state.inventory.append("clubhouse_key")
+    runner.start(
+        [
+            Action(
+                type="conditional",
+                condition=Condition(type="has_item", item="clubhouse_key"),
+                if_actions=[Action(type="say", speaker="Player", text="Unlocked.")],
+                else_actions=[Action(type="say", speaker="Player", text="Locked.")],
+            )
+        ]
+    )
+    assert context.dialogue.current is not None
+    assert context.dialogue.current.text == "Unlocked."
 

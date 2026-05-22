@@ -15,7 +15,19 @@ class Severity(str, Enum):
     INFO = "INFO"
 
 
-ActionType = Literal["say", "dialogue", "move_player", "change_scene", "sequence"]
+ActionType = Literal[
+    "say",
+    "dialogue",
+    "move_player",
+    "change_scene",
+    "sequence",
+    "set_variable",
+    "give_item",
+    "remove_item",
+    "set_object_enabled",
+    "conditional",
+]
+ConditionType = Literal["always", "variable", "has_item", "object_enabled", "not"]
 
 
 @dataclass(slots=True)
@@ -65,15 +77,35 @@ class SpawnPoint:
 
 
 @dataclass(slots=True)
+class Condition:
+    type: ConditionType = "always"
+    variable: str | None = None
+    operator: str = "=="
+    value: Any = True
+    item: str | None = None
+    object_id: str | None = None
+    condition: "Condition | None" = None
+
+
+@dataclass(slots=True)
 class Action:
     type: ActionType
     speaker: str | None = None
     text: str | None = None
     npc: str | None = None
+    node: str | None = None
     path: list[Point] = field(default_factory=list)
     scene: str | None = None
     spawn: str | None = None
     actions: list["Action"] = field(default_factory=list)
+    variable: str | None = None
+    value: Any = None
+    item: str | None = None
+    object_id: str | None = None
+    enabled: bool | None = None
+    condition: Condition | None = None
+    if_actions: list["Action"] = field(default_factory=list)
+    else_actions: list["Action"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -98,12 +130,48 @@ class Exit:
 
 
 @dataclass(slots=True)
+class DialogueChoice:
+    text: str
+    target: str | None = None
+    actions: list[Action] = field(default_factory=list)
+    condition: Condition | None = None
+
+
+@dataclass(slots=True)
+class DialogueNode:
+    id: str
+    speaker: str
+    text: str
+    choices: list[DialogueChoice] = field(default_factory=list)
+    actions: list[Action] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class NPC:
     id: str
     name: str
     sprite: str | None
     position: Point
     lines: list[str] = field(default_factory=list)
+    on_click: list[Action] = field(default_factory=list)
+    dialogue_nodes: list[DialogueNode] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ItemDefinition:
+    id: str
+    name: str
+    description: str = ""
+    sprite: str | None = None
+
+
+@dataclass(slots=True)
+class SceneItem:
+    id: str
+    item_id: str
+    rect: Rect
+    layer: str = "hotspots"
+    enabled: bool = True
     on_click: list[Action] = field(default_factory=list)
 
 
@@ -118,6 +186,7 @@ class SceneConfig:
     hotspots: list[Hotspot] = field(default_factory=list)
     exits: list[Exit] = field(default_factory=list)
     npcs: list[NPC] = field(default_factory=list)
+    items: list[SceneItem] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -128,4 +197,14 @@ class ProjectConfig:
     resolution: Resolution
     player: PlayerConfig
     scenes: list[str] = field(default_factory=list)
+    items: list[ItemDefinition] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class RuntimeState:
+    current_scene: str
+    player_position: Point
+    variables: dict[str, Any] = field(default_factory=dict)
+    inventory: list[str] = field(default_factory=list)
+    object_enabled: dict[str, bool] = field(default_factory=dict)
 

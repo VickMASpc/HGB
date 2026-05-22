@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pce.shared.models import Action, Exit, Hotspot, NPC, Point, Rect, SceneConfig
+from pce.runtime.state import object_key
+from pce.shared.models import Action, Exit, NPC, Point, Rect, RuntimeState, SceneConfig
 
 
 def point_in_rect(point: Point, rect: Rect) -> bool:
@@ -20,12 +21,18 @@ class ClickTarget:
 
 
 class SceneRuntime:
-    def __init__(self, scene: SceneConfig) -> None:
+    def __init__(self, scene: SceneConfig, state: RuntimeState | None = None) -> None:
         self.scene = scene
+        self.state = state
+
+    def _enabled(self, object_id: str, default: bool = True) -> bool:
+        if self.state is None:
+            return default
+        return self.state.object_enabled.get(object_key(self.scene.id, object_id), default)
 
     def hit_test(self, point: Point) -> ClickTarget | None:
         for exit_data in reversed(self.scene.exits):
-            if point_in_rect(point, exit_data.rect):
+            if self._enabled(exit_data.id) and point_in_rect(point, exit_data.rect):
                 return ClickTarget(
                     kind="exit",
                     object_id=exit_data.id,
@@ -41,11 +48,14 @@ class SceneRuntime:
                 )
         for npc in reversed(self.scene.npcs):
             rect = npc_rect(npc)
-            if point_in_rect(point, rect):
+            if self._enabled(npc.id) and point_in_rect(point, rect):
                 actions = npc.on_click or [Action(type="dialogue", npc=npc.id)]
                 return ClickTarget(kind="npc", object_id=npc.id, actions=actions)
+        for item in reversed(self.scene.items):
+            if self._enabled(item.id, item.enabled) and point_in_rect(point, item.rect):
+                return ClickTarget(kind="item", object_id=item.id, actions=item.on_click)
         for hotspot in reversed(self.scene.hotspots):
-            if hotspot.enabled and point_in_rect(point, hotspot.rect):
+            if self._enabled(hotspot.id, hotspot.enabled) and point_in_rect(point, hotspot.rect):
                 return ClickTarget(kind="hotspot", object_id=hotspot.id, actions=hotspot.on_click)
         return None
 

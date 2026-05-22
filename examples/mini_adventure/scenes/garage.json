@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "garage",
+  "name": "Garage",
+  "background": "assets/backgrounds/garage.png",
+  "layers": [],
+  "spawns": [
+    {
+      "id": "door",
+      "position": [120, 390],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "toolbox",
+      "name": "Toolbox",
+      "rect": [460, 320, 120, 90],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "No inventory in v1, but it looks useful."
+        }
+      ]
+    }
+  ],
+  "exits": [],
+  "npcs": []
+}
+

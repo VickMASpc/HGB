@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "title": "Mini Adventure",
+  "start_scene": "town_square",
+  "resolution": {
+    "width": 960,
+    "height": 540
+  },
+  "player": {
+    "sprite": "assets/sprites/player.png",
+    "default_scene": "town_square",
+    "default_spawn": "start"
+  },
+  "scenes": [
+    "scenes/town_square.json",
+    "scenes/clubhouse.json",
+    "scenes/garage.json"
+  ]
+}
+

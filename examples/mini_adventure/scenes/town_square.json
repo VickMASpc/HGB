@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "town_square",
+  "name": "Town Square",
+  "background": "assets/backgrounds/town_square.png",
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "hotspots",
+      "type": "hotspots",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "characters",
+      "type": "characters",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "spawns": [
+    {
+      "id": "start",
+      "position": [120, 390],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "mailbox",
+      "name": "Mailbox",
+      "rect": [420, 260, 120, 150],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "It's a mailbox."
+        }
+      ]
+    }
+  ],
+  "exits": [
+    {
+      "id": "to_clubhouse",
+      "name": "Go to Clubhouse",
+      "rect": [850, 230, 80, 230],
+      "walk_path": [[500, 390], [720, 385], [875, 370]],
+      "target_scene": "clubhouse",
+      "target_spawn": "entrance"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "dog",
+      "name": "Dog",
+      "sprite": "assets/sprites/dog.png",
+      "position": [620, 390],
+      "lines": ["Woof!", "Let's go explore."],
+      "on_click": [
+        {
+          "type": "dialogue",
+          "npc": "dog"
+        }
+      ]
+    }
+  ]
+}
+

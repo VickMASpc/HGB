@@ -1,0 +1,1313 @@
+PRD — Python 2D Point-and-Click Engine + Visual Editor
+
+Project codename: TBD
+Primary stack: Python, pygame-ce, Dear PyGui
+Product type: Engine + visual editor toolkit
+Target platform: Desktop only
+Primary user: Solo developer
+Development mode: AI-agent-assisted implementation, suitable for Codex-style task execution
+Workflow basis: This PRD proceeds after Step 0 and Step 0b, following the supplied consulting workflow: challenge assumptions, create strategic planning, generate backlog, define implementation details, and close with a synergy report.
+
+1. Executive Summary
+
+Build a 2D Python point-and-click adventure engine and visual editor inspired by classic children’s adventure games such as Putt-Putt.
+
+The project must allow a solo developer to create a small adventure game without manually editing JSON. The first production target is a 3-scene mini adventure where the user can visually create scenes, set hotspots, define NPC subtitle lines, configure scene transitions, set character movement paths, and playtest the result through a pygame-ce runtime.
+
+The editor is not secondary. The engine and editor are equally important. The runtime must be well-structured and independent from the editor, while the v1 editor should remain simple, functional, and focused.
+
+2. Step 1 — Challenge and Simulate
+2.1 Simulated Expert Roles
+Role 1 — Engine Architect
+
+Focuses on runtime structure, scene management, event flow, data models, serialization, and long-term maintainability.
+
+Role 2 — Editor Tools Engineer
+
+Focuses on the Dear PyGui editor, visual canvas tooling, asset browser, property inspector, validation, drag-and-drop editing, and playtest workflow.
+
+Role 3 — Adventure Game Systems Designer
+
+Focuses on point-and-click interaction feel, scene transitions, character movement, subtitles, hotspots, NPC behavior, and authoring workflow.
+
+2.2 Critical Risks in the Current Idea
+Risk 1 — “No walkable areas” conflicts with “character walks to exit point”
+
+You want no general walkable-area system, but you also want transitions to occur only after the character walks to an exit point. That is workable, but it means v1 needs an explicit movement-path model.
+
+The correct v1 interpretation is:
+
+The user draws or configures simple movement paths and destination points per hotspot/exit. The character does not freely pathfind across the scene.
+
+This avoids full pathfinding while still supporting the desired adventure-game feel.
+
+Risk 2 — Building the editor before the data model stabilizes will cause rework
+
+The editor must manipulate scenes, hotspots, NPCs, subtitles, transitions, paths, layers, and assets. If the JSON schema is unstable, every editor panel will break repeatedly.
+
+Therefore, the project must be schema-first:
+
+Define project schema.
+Define scene schema.
+Define interaction/action schema.
+Define path schema.
+Build runtime loader.
+Then build editor panels around those structures.
+Risk 3 — Dear PyGui and pygame-ce are separate UI/rendering worlds
+
+The runtime uses pygame-ce; the editor uses Dear PyGui. They should not share rendering code. They should share data models, serialization, and validation only.
+
+Correct separation:
+
+shared/
+  schemas
+  model classes
+  validators
+  serialization
+
+runtime/
+  pygame-ce renderer
+  game loop
+  scene manager
+  input system
+
+editor/
+  Dear PyGui UI
+  scene canvas
+  property panels
+  asset management
+Risk 4 — “Visual/no-code” can become too broad
+
+A full no-code editor can become a project larger than the engine. v1 must avoid general-purpose visual programming.
+
+The v1 action system should be deliberately small:
+
+on_click hotspot:
+  - say subtitle
+  - move player to point/path
+  - change scene
+  - run dialogue sequence
+
+No arbitrary Python scripting in v1.
+
+3. Product Vision
+3.1 Product Goal
+
+Create a desktop toolchain for building simple 2D point-and-click adventure games in Python.
+
+The product consists of:
+
+Runtime engine
+Runs playable games using pygame-ce.
+Visual editor
+Lets the developer build scenes, place objects, configure interactions, set movement paths, edit NPC subtitles, validate the project, and playtest.
+Shared project format
+Stores all game data in portable project folders using JSON files.
+3.2 v1 Product Definition
+
+v1 is complete when the developer can create the following entirely through the visual editor:
+
+A 3-scene mini adventure:
+- Player can move around each scene.
+- User-created hotspots trigger subtitles.
+- One hotspot transitions to another scene.
+- One NPC displays multiple subtitle lines.
+- All scenes and interactions are created through the visual editor.
+4. Non-Goals for v1
+
+The following are explicitly out of scope for v1:
+
+- Inventory
+- Save/load gameplay state
+- Audio
+- Voice acting
+- Branching dialogue
+- Cutscenes
+- Localization
+- Plugin/mod system
+- Web export
+- Mobile export
+- Multiplayer
+- Full pathfinding
+- Polygon hotspots
+- Complex scripting
+- Physics
+- Tilemaps
+- Combat
+- Quest system
+- Packaging to executable
+
+These may be considered after v1, but must not contaminate the initial implementation.
+
+5. Target User
+5.1 Primary User
+
+The primary user is the project creator only.
+
+5.2 Implications
+
+Because the project is for one technical user:
+
+- The editor can be simple rather than polished.
+- The schema can be readable and developer-friendly.
+- The UI can expose internal concepts.
+- Documentation can be practical rather than tutorial-heavy.
+- Strong validation matters more than onboarding polish.
+6. Core Product Requirements
+6.1 Runtime Requirements
+
+The runtime must:
+
+- Load a portable project folder.
+- Load project metadata.
+- Load scenes.
+- Load background images.
+- Display the active scene.
+- Display the player character.
+- Move the player along simple configured paths.
+- Detect hotspot clicks.
+- Execute visual action lists.
+- Show subtitles.
+- Handle scene transitions.
+- Block interactions while subtitles are active.
+- Support debug overlays for hotspots, exits, and movement targets.
+- Run independently from the editor.
+6.2 Editor Requirements
+
+The visual editor must:
+
+- Create a new project.
+- Open an existing project.
+- Save manually.
+- Autosave periodically.
+- Copy imported assets into the project folder.
+- Create scenes.
+- Assign scene background images.
+- Display the scene on a visual canvas.
+- Select objects directly on the canvas.
+- Drag and drop scene objects.
+- Resize rectangular hotspots with mouse handles.
+- Support grid snapping.
+- Support layers.
+- Create and edit hotspots.
+- Create and edit exits.
+- Create and edit NPCs.
+- Create and edit player spawn points.
+- Create and edit movement paths.
+- Create and edit subtitle dialogue lines.
+- Configure visual trigger/action lists.
+- Validate broken references.
+- Playtest current scene.
+- Run full game.
+7. Architecture Requirements
+7.1 Required Module Structure
+
+AI agents must preserve this separation:
+
+pointclick_engine/
+  pyproject.toml
+  README.md
+
+  src/
+    pce/
+      __init__.py
+
+      shared/
+        __init__.py
+        models.py
+        schema.py
+        serialization.py
+        validation.py
+        asset_paths.py
+        constants.py
+
+      runtime/
+        __init__.py
+        main.py
+        app.py
+        engine.py
+        renderer.py
+        input.py
+        scene_manager.py
+        scene_runtime.py
+        player.py
+        hotspot.py
+        dialogue.py
+        actions.py
+        movement.py
+        debug_overlay.py
+
+      editor/
+        __init__.py
+        main.py
+        app.py
+        project_controller.py
+        canvas.py
+        panels/
+          project_panel.py
+          scene_panel.py
+          properties_panel.py
+          asset_browser.py
+          dialogue_panel.py
+          action_list_panel.py
+          validation_panel.py
+        tools/
+          select_tool.py
+          hotspot_tool.py
+          path_tool.py
+          npc_tool.py
+          exit_tool.py
+        preview_bridge.py
+
+  tests/
+    test_project_loading.py
+    test_scene_loading.py
+    test_validation.py
+    test_action_execution.py
+7.2 Dependency Boundaries
+Shared layer
+
+May depend on:
+
+- Python standard library
+- pydantic or dataclasses
+
+Must not depend on:
+
+- pygame-ce
+- Dear PyGui
+Runtime layer
+
+May depend on:
+
+- pygame-ce
+- shared layer
+
+Must not depend on:
+
+- Dear PyGui
+- editor modules
+Editor layer
+
+May depend on:
+
+- Dear PyGui
+- shared layer
+
+May invoke the runtime as a subprocess for playtesting.
+
+Must not directly depend on runtime rendering internals unless explicitly isolated through a bridge.
+
+8. Project Folder Format
+8.1 Required Project Structure
+
+Every game project must be portable as a folder:
+
+my_game/
+  game.json
+
+  scenes/
+    town_square.json
+    clubhouse.json
+    garage.json
+
+  assets/
+    backgrounds/
+    sprites/
+    ui/
+
+  autosaves/
+
+Audio is excluded from v1.
+
+8.2 game.json
+
+Example:
+
+{
+  "schema_version": 1,
+  "title": "Mini Adventure",
+  "start_scene": "town_square",
+  "resolution": {
+    "width": 960,
+    "height": 540
+  },
+  "player": {
+    "sprite": "assets/sprites/player.png",
+    "default_scene": "town_square",
+    "default_spawn": "start"
+  },
+  "scenes": [
+    "scenes/town_square.json",
+    "scenes/clubhouse.json",
+    "scenes/garage.json"
+  ]
+}
+8.3 Scene File Format
+
+Example:
+
+{
+  "schema_version": 1,
+  "id": "town_square",
+  "name": "Town Square",
+  "background": "assets/backgrounds/town_square.png",
+
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "hotspots",
+      "type": "hotspots",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "characters",
+      "type": "characters",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "foreground",
+      "type": "foreground",
+      "visible": true,
+      "locked": false
+    }
+  ],
+
+  "spawns": [
+    {
+      "id": "start",
+      "position": [120, 380],
+      "facing": "right"
+    }
+  ],
+
+  "hotspots": [
+    {
+      "id": "mailbox",
+      "name": "Mailbox",
+      "rect": [430, 280, 120, 160],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "It's a mailbox."
+        }
+      ]
+    }
+  ],
+
+  "exits": [
+    {
+      "id": "to_clubhouse",
+      "name": "Go to Clubhouse",
+      "rect": [850, 250, 80, 220],
+      "walk_path": [
+        [500, 390],
+        [720, 385],
+        [875, 370]
+      ],
+      "target_scene": "clubhouse",
+      "target_spawn": "entrance"
+    }
+  ],
+
+  "npcs": [
+    {
+      "id": "dog",
+      "name": "Dog",
+      "sprite": "assets/sprites/dog.png",
+      "position": [620, 360],
+      "lines": [
+        "Woof!",
+        "Let's go explore."
+      ],
+      "on_click": [
+        {
+          "type": "dialogue",
+          "npc": "dog"
+        }
+      ]
+    }
+  ]
+}
+9. Core Data Model
+9.1 Entities
+
+Required v1 entities:
+
+Project
+Scene
+Layer
+AssetReference
+SpawnPoint
+Player
+Hotspot
+Exit
+NPC
+DialogueLine
+Action
+MovementPath
+ValidationIssue
+9.2 Coordinate System
+
+Use a simple 2D pixel coordinate system:
+
+Origin: top-left
+X: increases right
+Y: increases downward
+Units: pixels
+
+All editor and runtime coordinates must use the same coordinate space.
+
+9.3 Hotspots
+
+v1 supports rectangular hotspots only.
+
+A hotspot must have:
+
+- id
+- name
+- rect: [x, y, width, height]
+- enabled
+- action list
+
+Polygon hotspots are deferred.
+
+9.4 Movement Paths
+
+Because v1 has no walkable areas and no pathfinding, movement must be defined by explicit point paths.
+
+A path is:
+
+[
+  [120, 380],
+  [250, 380],
+  [400, 360]
+]
+
+Rules:
+
+- Paths are manually drawn or edited in the visual editor.
+- The player follows each point in order.
+- Scene transition exits require a walk_path.
+- Interaction can optionally require movement before action execution.
+- No obstacle avoidance in v1.
+9.5 Dialogue
+
+v1 dialogue is linear subtitle-only dialogue.
+
+Rules:
+
+- No branching.
+- No voice audio.
+- No portraits unless trivial to add.
+- Dialogue blocks interactions while visible.
+- Dialogue can advance by click or timed delay.
+10. Interaction Model
+10.1 Standard Input
+
+Runtime input:
+
+Left click empty scene:
+  - optional movement if a target path or point exists
+  - otherwise no effect
+
+Left click hotspot:
+  - run hotspot action list
+
+Left click NPC:
+  - run NPC dialogue action
+
+Left click exit:
+  - move player along configured exit path
+  - after reaching final path point, change scene
+
+Escape:
+  - close runtime or open simple debug/menu placeholder
+
+F1:
+  - toggle debug overlay
+10.2 Interaction Blocking
+
+While subtitles are visible:
+
+- Hotspot clicks are ignored.
+- Scene transitions are ignored.
+- Player movement input is ignored.
+- Click advances dialogue if configured.
+11. Action System
+11.1 Design Rule
+
+Use a visual predefined trigger/action system. Do not implement Python scripting in v1.
+
+11.2 Supported v1 Actions
+say
+
+Displays one subtitle line.
+
+{
+  "type": "say",
+  "speaker": "Player",
+  "text": "It's locked."
+}
+dialogue
+
+Runs linear NPC lines.
+
+{
+  "type": "dialogue",
+  "npc": "dog"
+}
+move_player
+
+Moves player along a configured path.
+
+{
+  "type": "move_player",
+  "path": [
+    [200, 380],
+    [300, 370]
+  ]
+}
+change_scene
+
+Changes active scene.
+
+{
+  "type": "change_scene",
+  "scene": "clubhouse",
+  "spawn": "entrance"
+}
+sequence
+
+Runs multiple actions in order.
+
+{
+  "type": "sequence",
+  "actions": [
+    {
+      "type": "say",
+      "speaker": "Player",
+      "text": "Let's go."
+    },
+    {
+      "type": "move_player",
+      "path": [[400, 380], [700, 380]]
+    },
+    {
+      "type": "change_scene",
+      "scene": "clubhouse",
+      "spawn": "entrance"
+    }
+  ]
+}
+12. Runtime Flow
+12.1 Startup
+1. Load project folder.
+2. Parse game.json.
+3. Validate project.
+4. Load start scene.
+5. Load assets for start scene.
+6. Spawn player.
+7. Enter main loop.
+12.2 Main Loop
+1. Poll pygame events.
+2. Convert input to runtime commands.
+3. Update active actions.
+4. Update player movement.
+5. Update dialogue state.
+6. Resolve scene transition if pending.
+7. Render scene.
+8. Render player/NPCs.
+9. Render subtitles.
+10. Render debug overlay if enabled.
+12.3 Scene Transition Flow
+1. Player clicks exit hotspot.
+2. Runtime blocks additional interactions.
+3. Runtime moves player along configured exit walk_path.
+4. Runtime verifies final path point reached.
+5. Runtime loads target scene.
+6. Runtime places player at target spawn.
+7. Runtime unblocks interactions.
+13. Editor UX Requirements
+13.1 Main Layout
+
+Dear PyGui editor layout:
+
+Top toolbar:
+  New Project | Open | Save | Play Scene | Run Game | Validate
+
+Left panel:
+  Project tree
+  Scenes
+  Assets
+
+Center:
+  Scene canvas
+
+Right panel:
+  Properties inspector
+
+Bottom panel:
+  Validation messages / status / autosave state
+13.2 Canvas Requirements
+
+The scene canvas must support:
+
+- Background display
+- Object selection
+- Dragging objects
+- Resizing rectangular hotspots
+- Drawing path points
+- Grid snapping
+- Layer visibility toggles
+- Debug visual colors for different object types
+13.3 Required Editor Tools
+Select Tool:
+  Select and move objects.
+
+Hotspot Tool:
+  Draw rectangular hotspots.
+
+Exit Tool:
+  Draw rectangular exit areas and assign target scene/spawn.
+
+Path Tool:
+  Click to create path points.
+  Drag existing points.
+  Delete points.
+
+NPC Tool:
+  Place NPCs and edit subtitle lines.
+
+Spawn Tool:
+  Place player spawn points.
+13.4 Properties Inspector
+
+When selecting an entity, the inspector must show editable fields.
+
+Hotspot properties
+- id
+- name
+- x
+- y
+- width
+- height
+- enabled
+- action list
+Exit properties
+- id
+- name
+- rect
+- walk_path
+- target_scene
+- target_spawn
+NPC properties
+- id
+- name
+- sprite
+- position
+- subtitle lines
+- on_click action
+Spawn properties
+- id
+- position
+- facing
+14. Validation Requirements
+
+The editor and runtime must share the same validation logic.
+
+14.1 Required Validation Rules
+
+Validation must detect:
+
+- Missing game.json
+- Invalid schema version
+- Missing start scene
+- Scene file listed in game.json does not exist
+- Scene id mismatch
+- Missing background image
+- Missing player sprite
+- Missing NPC sprite
+- Missing target scene
+- Missing target spawn
+- Exit without walk_path
+- Scene without any spawn point
+- Duplicate ids within a scene
+- Invalid rectangle dimensions
+- Invalid path point format
+- Missing dialogue NPC reference
+- Missing action target
+- Broken asset path
+14.2 Validation Severity
+
+Use three severities:
+
+ERROR:
+  Prevents running.
+
+WARNING:
+  Allows running but indicates likely problem.
+
+INFO:
+  Helpful non-blocking notice.
+14.3 Runtime Behavior on Invalid Data
+Missing optional sprite:
+  Show placeholder rectangle.
+
+Missing required background:
+  Fail scene load with clear error.
+
+Missing target scene:
+  Block transition and log error.
+
+Scene with no spawn:
+  Fail validation before runtime.
+
+Overlapping hotspots:
+  Warning only in v1.
+15. Autosave and Save Behavior
+
+The editor must support both manual save and autosave.
+
+15.1 Manual Save
+
+Triggered by:
+
+- Ctrl+S
+- Save button
+15.2 Autosave
+
+Autosave must:
+
+- Save into autosaves/ folder.
+- Never overwrite the main project file directly.
+- Include timestamped autosave files.
+- Display autosave status in editor.
+
+Example:
+
+autosaves/
+  autosave_2026-05-21_143000/
+    game.json
+    scenes/
+16. Asset Management
+16.1 Asset Import
+
+When the user imports an image:
+
+- Copy it into the project assets folder.
+- Store a relative path.
+- Prevent absolute system paths in project files.
+16.2 Asset Categories
+
+v1 asset categories:
+
+assets/backgrounds/
+assets/sprites/
+assets/ui/
+
+No audio category required in v1.
+
+17. Testing Requirements
+17.1 Unit Tests
+
+Required tests:
+
+test_project_loading.py
+  - loads valid project
+  - rejects missing game.json
+  - rejects missing start scene
+
+test_scene_loading.py
+  - loads valid scene
+  - rejects missing background
+  - validates spawn points
+  - validates exits
+
+test_validation.py
+  - detects broken target scene
+  - detects missing target spawn
+  - detects duplicate ids
+  - detects bad rectangles
+  - detects missing asset paths
+
+test_action_execution.py
+  - say action creates subtitle
+  - dialogue action advances lines
+  - move_player follows path
+  - sequence executes in order
+  - change_scene updates scene manager
+17.2 Manual Acceptance Test
+
+The v1 release cannot be accepted until this test passes:
+
+1. Open editor.
+2. Create new project.
+3. Import 3 background images.
+4. Create 3 scenes.
+5. Add player spawn points.
+6. Add one NPC with multiple subtitle lines.
+7. Add one normal hotspot that triggers a subtitle.
+8. Add one exit from scene A to scene B.
+9. Draw the exit movement path.
+10. Add another exit from scene B to scene C.
+11. Save project.
+12. Validate project.
+13. Playtest current scene.
+14. Run full game.
+15. Confirm scene transitions happen only after player walks to exit point.
+16. Confirm subtitles block interactions.
+17. Close editor.
+18. Reopen project.
+19. Confirm all data persists.
+18. Development Strategy
+18.1 Priority Hierarchy
+
+Follow this order:
+
+1. Truth
+2. Logic
+3. Robustness
+4. Utility
+5. Clarity
+
+Do not prioritize UI polish over a correct data model and runtime.
+
+18.2 Development Phases
+Phase 0 — Repository and Tooling
+
+Goal: create a clean Python project foundation.
+
+Deliverables:
+
+- pyproject.toml
+- src package structure
+- test setup
+- lint/format setup
+- minimal README
+Phase 1 — Shared Schema and Validation
+
+Goal: define the canonical data model before editor/runtime implementation.
+
+Deliverables:
+
+- Project model
+- Scene model
+- Hotspot model
+- Exit model
+- NPC model
+- Action model
+- Movement path model
+- JSON load/save
+- Validation system
+Phase 2 — Minimal Runtime
+
+Goal: load a project and render a scene.
+
+Deliverables:
+
+- pygame-ce window
+- project loader
+- scene loader
+- background rendering
+- player rendering
+- debug overlay
+Phase 3 — Runtime Interaction System
+
+Goal: make the 3-scene prototype playable from hand-authored JSON.
+
+Deliverables:
+
+- hotspot click detection
+- subtitle display
+- linear NPC dialogue
+- action sequence execution
+- path-based player movement
+- scene transitions after movement
+Phase 4 — Minimal Editor Shell
+
+Goal: create Dear PyGui editor with project loading and scene display.
+
+Deliverables:
+
+- main editor window
+- project tree
+- scene list
+- asset browser
+- canvas background display
+- properties panel placeholder
+Phase 5 — Visual Scene Editing
+
+Goal: allow actual authoring.
+
+Deliverables:
+
+- select tool
+- hotspot rectangle creation
+- hotspot resize handles
+- drag-and-drop movement
+- grid snapping
+- spawn placement
+- NPC placement
+- exit placement
+- path drawing
+Phase 6 — Action and Dialogue Editing
+
+Goal: allow no-code interaction configuration.
+
+Deliverables:
+
+- dialogue panel
+- subtitle line editor
+- action list editor
+- target scene dropdown
+- target spawn dropdown
+- NPC reference selector
+Phase 7 — Validation and Playtest Workflow
+
+Goal: close the editor/runtime loop.
+
+Deliverables:
+
+- validation panel
+- project-wide validation button
+- playtest current scene
+- run full game
+- autosave system
+- manual save
+Phase 8 — v1 Acceptance Project
+
+Goal: build the 3-scene mini adventure entirely through the editor.
+
+Deliverables:
+
+- example project
+- acceptance test checklist
+- bug fixes
+- README usage instructions
+19. AI Agent Implementation Instructions
+19.1 General Rules for Agents
+
+AI agents working on this project must obey these rules:
+
+- Do not build features outside v1 scope.
+- Do not introduce inventory, audio, save/load, branching dialogue, or pathfinding.
+- Do not couple editor code to pygame runtime internals.
+- Do not store absolute asset paths in project files.
+- Do not skip validation.
+- Do not implement Python scripting for game logic in v1.
+- Do not optimize prematurely.
+- Prefer small, testable modules.
+- Update tests when changing schema behavior.
+19.2 Preferred Coding Style
+- Python 3.11+
+- Type hints required.
+- Small classes with clear responsibilities.
+- Dataclasses or Pydantic models acceptable.
+- Pure shared models must be independent of GUI/rendering libraries.
+- Runtime systems should be deterministic where practical.
+- Avoid global mutable state except for constants/config.
+19.3 Error Handling Standard
+
+All loader and validator errors must include:
+
+- severity
+- code
+- human-readable message
+- file path if applicable
+- object id if applicable
+
+Example:
+
+{
+  "severity": "ERROR",
+  "code": "MISSING_TARGET_SCENE",
+  "message": "Exit 'to_clubhouse' references missing scene 'clubhouse'.",
+  "file": "scenes/town_square.json",
+  "object_id": "to_clubhouse"
+}
+20. AI Agent Task Backlog
+20.1 Setup Tasks
+[ ] Create Python project structure.
+[ ] Add pyproject.toml.
+[ ] Add runtime/editor/shared package folders.
+[ ] Add pytest.
+[ ] Add ruff or equivalent linting.
+[ ] Add README.md.
+[ ] Add .gitignore.
+
+Success criteria:
+
+- Project installs locally.
+- Tests can run.
+- Runtime and editor entry points are separate.
+20.2 Shared Model Tasks
+[ ] Define ProjectConfig.
+[ ] Define SceneConfig.
+[ ] Define LayerConfig.
+[ ] Define SpawnPoint.
+[ ] Define Hotspot.
+[ ] Define Exit.
+[ ] Define NPC.
+[ ] Define Action union.
+[ ] Define MovementPath.
+[ ] Define ValidationIssue.
+[ ] Implement JSON serialization.
+[ ] Implement JSON deserialization.
+[ ] Implement relative asset path handling.
+
+Success criteria:
+
+- Valid sample project loads.
+- Invalid sample project returns structured validation issues.
+- Models do not import pygame-ce or Dear PyGui.
+20.3 Runtime Tasks
+[ ] Create pygame-ce app shell.
+[ ] Implement fixed-resolution window.
+[ ] Load project folder from CLI argument.
+[ ] Load start scene.
+[ ] Render scene background.
+[ ] Render placeholder player.
+[ ] Render NPC placeholder/sprite.
+[ ] Implement click detection.
+[ ] Implement hotspot runtime objects.
+[ ] Implement subtitle system.
+[ ] Implement linear dialogue advancement.
+[ ] Implement action runner.
+[ ] Implement player movement along point path.
+[ ] Implement scene transition after movement.
+[ ] Implement debug overlay.
+[ ] Block input during subtitles.
+
+Success criteria:
+
+- Hand-authored sample project is playable.
+- Hotspots trigger subtitles.
+- Exits move player first, then change scene.
+- Debug overlay shows hotspot rectangles and paths.
+20.4 Editor Shell Tasks
+[ ] Create Dear PyGui app shell.
+[ ] Add top toolbar.
+[ ] Add project tree panel.
+[ ] Add scene list.
+[ ] Add asset browser.
+[ ] Add central canvas.
+[ ] Add properties panel.
+[ ] Add validation panel.
+[ ] Add project open/save.
+[ ] Add autosave folder support.
+
+Success criteria:
+
+- Editor opens.
+- Project can be created, saved, closed, reopened.
+- Scene background is visible in canvas.
+20.5 Visual Editing Tasks
+[ ] Implement selection state.
+[ ] Implement canvas-to-scene coordinate conversion.
+[ ] Implement grid snapping.
+[ ] Implement layer visibility.
+[ ] Implement object dragging.
+[ ] Implement hotspot creation.
+[ ] Implement hotspot resize handles.
+[ ] Implement exit creation.
+[ ] Implement spawn placement.
+[ ] Implement NPC placement.
+[ ] Implement path point creation.
+[ ] Implement path point dragging.
+[ ] Implement object deletion.
+
+Success criteria:
+
+- User can visually create and modify scene entities.
+- Saved project reflects visual edits.
+- Reloaded project matches previous editor state.
+20.6 Dialogue and Action Editor Tasks
+[ ] Add NPC subtitle line editor.
+[ ] Add action list editor.
+[ ] Add say action editor.
+[ ] Add dialogue action editor.
+[ ] Add move_player action editor.
+[ ] Add change_scene action editor.
+[ ] Add sequence action editor.
+[ ] Add target scene dropdown.
+[ ] Add target spawn dropdown.
+
+Success criteria:
+
+- User can configure interactions without manual JSON editing.
+- Invalid references are detected before playtest.
+20.7 Playtest Tasks
+[ ] Add Play Current Scene button.
+[ ] Add Run Full Game button.
+[ ] Launch runtime as subprocess.
+[ ] Pass project folder path to runtime.
+[ ] Optionally pass starting scene override.
+[ ] Show validation errors before launching.
+
+Success criteria:
+
+- Editor can launch runtime.
+- Current scene can be playtested.
+- Full game can be run from start scene.
+21. Suggested Command Interfaces
+21.1 Runtime CLI
+python -m pce.runtime.main --project path/to/project
+
+Optional current-scene playtest:
+
+python -m pce.runtime.main --project path/to/project --scene town_square
+21.2 Editor CLI
+python -m pce.editor.main
+
+Optional open project:
+
+python -m pce.editor.main --project path/to/project
+22. Minimal Example Files
+22.1 Minimal game.json
+{
+  "schema_version": 1,
+  "title": "Example Adventure",
+  "start_scene": "scene_1",
+  "resolution": {
+    "width": 960,
+    "height": 540
+  },
+  "player": {
+    "sprite": "assets/sprites/player.png",
+    "default_scene": "scene_1",
+    "default_spawn": "start"
+  },
+  "scenes": [
+    "scenes/scene_1.json"
+  ]
+}
+22.2 Minimal Scene
+{
+  "schema_version": 1,
+  "id": "scene_1",
+  "name": "Scene 1",
+  "background": "assets/backgrounds/scene_1.png",
+  "layers": [],
+  "spawns": [
+    {
+      "id": "start",
+      "position": [100, 400],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [],
+  "exits": [],
+  "npcs": []
+}
+23. Definition of Done
+23.1 v1 Definition of Done
+
+v1 is done only when:
+
+- Runtime runs independently from editor.
+- Editor creates a portable project folder.
+- Project data is saved as relative-path JSON.
+- User can create scenes visually.
+- User can place rectangular hotspots visually.
+- User can resize hotspots visually.
+- User can create NPCs visually.
+- User can edit NPC subtitle lines visually.
+- User can create scene exits visually.
+- User can draw exit movement paths visually.
+- User can validate the project.
+- User can playtest current scene.
+- User can run full game.
+- User can create the 3-scene mini adventure without manually editing JSON.
+- Automated tests pass.
+24. Roadmap After v1
+
+After v1, consider features in this order:
+
+1. Better player animation states.
+2. Foreground occlusion layers.
+3. Inventory.
+4. Save/load gameplay state.
+5. Audio.
+6. Branching dialogue.
+7. Cutscene action sequences.
+8. Packaging with PyInstaller.
+9. Localization.
+10. Polygon hotspots.
+11. Walkable areas/pathfinding.
+12. Plugin support.
+
+Do not start these until v1 is accepted.
+
+25. Implementation Prompt for Codex-Style Agent
+
+Use this prompt when delegating implementation:
+
+You are implementing a Python 2D point-and-click adventure engine and visual editor.
+
+Build the project according to the PRD.
+
+Hard constraints:
+- Runtime uses pygame-ce.
+- Editor uses Dear PyGui.
+- Runtime and editor are equally important.
+- Runtime must run independently from editor.
+- Shared models must not import pygame-ce or Dear PyGui.
+- Project files must be portable JSON with relative asset paths.
+- v1 supports rectangular hotspots only.
+- v1 has no inventory, no audio, no save/load, no branching dialogue, no pathfinding, no polygon hotspots, no Python scripting.
+- Character movement uses explicit point paths drawn in the editor.
+- Scene exits trigger only after the player walks to the exit path endpoint.
+- Dialogue is subtitle-only and linear.
+- Interactions are configured through visual trigger/action lists.
+- The editor must support drag/drop object placement, grid snapping, layers, resizable hotspots, NPC subtitle editing, project validation, playtest current scene, and run full game.
+
+Prioritize:
+1. Shared schema and validation.
+2. Runtime loading and rendering.
+3. Runtime interactions.
+4. Editor project loading/saving.
+5. Visual scene editing.
+6. Action/dialogue editing.
+7. Playtest workflow.
+8. 3-scene acceptance project.
+
+Do not implement features outside v1 scope.
+Keep modules small and testable.
+Add or update tests for schema, validation, loading, and action execution.
+26. Feasibility Analysis
+
+This project is feasible for a solo developer because the scope is intentionally narrow:
+
+- 2D only
+- desktop only
+- pygame-ce runtime
+- Dear PyGui editor
+- no inventory
+- no audio
+- no branching dialogue
+- no pathfinding
+- rectangular hotspots only
+
+The main complexity is not rendering. The main complexity is the editor-data-runtime loop.
+
+The project should succeed if implementation starts from schema and validation rather than UI.
+
+27. Identified Residual Risks
+1. Dear PyGui canvas interaction may become awkward for precise scene editing.
+2. Runtime/editor coordinate conversion can cause subtle bugs.
+3. Movement paths may feel unnatural without walkable areas.
+4. Asset copying and relative path management can become messy if not centralized.
+5. Visual action editing can expand beyond v1 scope.
+6. Autosave may corrupt user expectations if it overwrites primary files, so autosave must stay separate.
+7. Lack of pathfinding means the user must author believable movement manually.

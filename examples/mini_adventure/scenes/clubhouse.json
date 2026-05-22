@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "clubhouse",
+  "name": "Clubhouse",
+  "background": "assets/backgrounds/clubhouse.png",
+  "layers": [],
+  "spawns": [
+    {
+      "id": "entrance",
+      "position": [120, 390],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "poster",
+      "name": "Poster",
+      "rect": [360, 160, 120, 100],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "A poster for today's adventure."
+        }
+      ]
+    }
+  ],
+  "exits": [
+    {
+      "id": "to_garage",
+      "name": "Go to Garage",
+      "rect": [830, 240, 90, 220],
+      "walk_path": [[350, 390], [610, 390], [875, 370]],
+      "target_scene": "garage",
+      "target_spawn": "door"
+    }
+  ],
+  "npcs": []
+}
+

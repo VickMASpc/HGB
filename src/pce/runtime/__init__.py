@@ -1,0 +1,2 @@
+"""Standalone pygame-ce runtime."""
+

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pointclick-engine"
+version = "0.1.0"
+description = "Python 2D point-and-click adventure engine and visual editor."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pygame-ce>=2.5.0",
+  "dearpygui>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.7.0",
+]
+
+[project.scripts]
+pce-runtime = "pce.runtime.main:main"
+pce-editor = "pce.editor.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+

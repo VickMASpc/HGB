@@ -8,6 +8,7 @@ from pathlib import Path
 from pce.shared.constants import DEFAULT_HEIGHT, DEFAULT_LAYERS, DEFAULT_WIDTH, SCHEMA_VERSION
 from pce.shared.models import (
     Action,
+    ItemDefinition,
     Hotspot,
     PlayerConfig,
     ProjectConfig,
@@ -75,6 +76,8 @@ def create_project(project_root: Path, title: str = "Mini Adventure") -> tuple[P
         "assets/sprites",
         "assets/ui",
         "autosaves",
+        "saves",
+        "exports",
     ]:
         (project_root / folder).mkdir(parents=True, exist_ok=True)
 
@@ -89,6 +92,7 @@ def create_project(project_root: Path, title: str = "Mini Adventure") -> tuple[P
             default_spawn="start",
         ),
         scenes=["scenes/scene_1.json"],
+        items=[ItemDefinition(id="key", name="Key", description="A small brass key.")],
     )
     scene = SceneConfig(
         schema_version=SCHEMA_VERSION,

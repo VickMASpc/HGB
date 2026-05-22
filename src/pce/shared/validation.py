@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from pce.shared.asset_paths import normalize_relative_path, project_path
+from pce.shared.asset_paths import project_path
 from pce.shared.constants import SCHEMA_VERSION
-from pce.shared.models import Action, ProjectConfig, SceneConfig, Severity, ValidationIssue
+from pce.shared.models import Action, Condition, ProjectConfig, SceneConfig, Severity, ValidationIssue
 from pce.shared.serialization import load_project, load_scenes
 
 
@@ -112,11 +112,21 @@ def validate_project(
     if player_asset:
         issues.append(player_asset)
 
+    item_ids = [item.id for item in project.items]
+    for item_id, count in Counter(item_ids).items():
+        if item_id and count > 1:
+            issues.append(_issue(Severity.ERROR, "DUPLICATE_ITEM_ID", f"Duplicate item id '{item_id}'.", "game.json", item_id))
+    for item in project.items:
+        if item.sprite:
+            item_asset = _asset_issue(project_root, item.sprite, "MISSING_ITEM_SPRITE", "game.json", item.id)
+            if item_asset:
+                issues.append(item_asset)
+
     for scene_file in project.scenes:
         scene = scenes.get(Path(scene_file).stem)
         if scene is None:
             continue
-        issues.extend(validate_scene(project_root, scene_file, scene, scenes))
+        issues.extend(validate_scene(project_root, scene_file, scene, scenes, set(item_ids)))
 
     return issues
 
@@ -126,6 +136,7 @@ def validate_scene(
     scene_file: str,
     scene: SceneConfig,
     scenes: dict[str, SceneConfig],
+    item_ids: set[str] | None = None,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     if scene.schema_version != SCHEMA_VERSION:
@@ -159,7 +170,8 @@ def validate_scene(
     if background_issue:
         issues.append(background_issue)
 
-    ids = [item.id for item in [*scene.spawns, *scene.hotspots, *scene.exits, *scene.npcs]]
+    item_ids = item_ids or set()
+    ids = [item.id for item in [*scene.spawns, *scene.hotspots, *scene.exits, *scene.npcs, *scene.items]]
     for object_id, count in Counter(ids).items():
         if object_id and count > 1:
             issues.append(
@@ -174,6 +186,7 @@ def validate_scene(
 
     spawn_ids = {spawn.id for spawn in scene.spawns}
     npc_ids = {npc.id for npc in scene.npcs}
+    scene_object_ids = set(ids)
     for hotspot in scene.hotspots:
         x, y, width, height = hotspot.rect
         if width <= 0 or height <= 0:
@@ -186,7 +199,7 @@ def validate_scene(
                     hotspot.id,
                 )
             )
-        issues.extend(_validate_actions(scene_file, hotspot.id, hotspot.on_click, scenes, spawn_ids, npc_ids))
+        issues.extend(_validate_actions(scene_file, hotspot.id, hotspot.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
 
     for exit_data in scene.exits:
         x, y, width, height = exit_data.rect
@@ -236,7 +249,26 @@ def validate_scene(
             sprite_issue = _asset_issue(project_root, npc.sprite, "MISSING_NPC_SPRITE", scene_file, npc.id)
             if sprite_issue:
                 issues.append(sprite_issue)
-        issues.extend(_validate_actions(scene_file, npc.id, npc.on_click, scenes, spawn_ids, npc_ids))
+        node_ids = {node.id for node in npc.dialogue_nodes}
+        for node_id, count in Counter(node_ids).items():
+            if node_id and count > 1:
+                issues.append(_issue(Severity.ERROR, "DUPLICATE_DIALOGUE_NODE", f"Duplicate dialogue node '{node_id}'.", scene_file, npc.id))
+        for node in npc.dialogue_nodes:
+            issues.extend(_validate_actions(scene_file, npc.id, node.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            for choice in node.choices:
+                if choice.target and choice.target not in node_ids:
+                    issues.append(_issue(Severity.ERROR, "MISSING_DIALOGUE_NODE", f"Choice references missing dialogue node '{choice.target}'.", scene_file, npc.id))
+                issues.extend(_validate_condition(scene_file, npc.id, choice.condition, item_ids, scene_object_ids))
+                issues.extend(_validate_actions(scene_file, npc.id, choice.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+        issues.extend(_validate_actions(scene_file, npc.id, npc.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+
+    for item in scene.items:
+        x, y, width, height = item.rect
+        if width <= 0 or height <= 0:
+            issues.append(_issue(Severity.ERROR, "INVALID_RECT", f"Item '{item.id}' has invalid rect {item.rect}.", scene_file, item.id))
+        if item.item_id not in item_ids:
+            issues.append(_issue(Severity.ERROR, "MISSING_ITEM_DEFINITION", f"Scene item '{item.id}' references missing item '{item.item_id}'.", scene_file, item.id))
+        issues.extend(_validate_actions(scene_file, item.id, item.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
 
     return issues
 
@@ -248,6 +280,8 @@ def _validate_actions(
     scenes: dict[str, SceneConfig],
     spawn_ids: set[str],
     npc_ids: set[str],
+    item_ids: set[str],
+    scene_object_ids: set[str],
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     for action in actions:
@@ -293,8 +327,45 @@ def _validate_actions(
                 )
             )
         if action.type == "sequence":
-            issues.extend(_validate_actions(scene_file, object_id, action.actions, scenes, spawn_ids, npc_ids))
+            issues.extend(_validate_actions(scene_file, object_id, action.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+        if action.type in {"give_item", "remove_item"} and action.item not in item_ids:
+            issues.append(_issue(Severity.ERROR, "MISSING_ACTION_ITEM", f"Action references missing item '{action.item}'.", scene_file, object_id))
+        if action.type == "set_object_enabled" and action.object_id not in scene_object_ids:
+            issues.append(_issue(Severity.ERROR, "MISSING_ACTION_OBJECT", f"Action references missing object '{action.object_id}'.", scene_file, object_id))
+        if action.type == "set_variable" and not _valid_variable_name(action.variable):
+            issues.append(_issue(Severity.ERROR, "INVALID_VARIABLE_NAME", f"Invalid variable name '{action.variable}'.", scene_file, object_id))
+        if action.type == "conditional":
+            issues.extend(_validate_condition(scene_file, object_id, action.condition, item_ids, scene_object_ids))
+            issues.extend(_validate_actions(scene_file, object_id, action.if_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            issues.extend(_validate_actions(scene_file, object_id, action.else_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
     return issues
+
+
+def _validate_condition(
+    scene_file: str,
+    object_id: str,
+    condition: Condition | None,
+    item_ids: set[str],
+    scene_object_ids: set[str],
+) -> list[ValidationIssue]:
+    if condition is None or condition.type == "always":
+        return []
+    issues: list[ValidationIssue] = []
+    if condition.type == "variable" and not _valid_variable_name(condition.variable):
+        issues.append(_issue(Severity.ERROR, "INVALID_VARIABLE_NAME", f"Invalid condition variable '{condition.variable}'.", scene_file, object_id))
+    if condition.type == "has_item" and condition.item not in item_ids:
+        issues.append(_issue(Severity.ERROR, "MISSING_CONDITION_ITEM", f"Condition references missing item '{condition.item}'.", scene_file, object_id))
+    if condition.type == "object_enabled" and condition.object_id not in scene_object_ids:
+        issues.append(_issue(Severity.ERROR, "MISSING_CONDITION_OBJECT", f"Condition references missing object '{condition.object_id}'.", scene_file, object_id))
+    if condition.type == "not":
+        issues.extend(_validate_condition(scene_file, object_id, condition.condition, item_ids, scene_object_ids))
+    return issues
+
+
+def _valid_variable_name(value: str | None) -> bool:
+    if not value:
+        return False
+    return value.replace("_", "").isalnum() and not value[0].isdigit()
 
 
 def has_errors(issues: list[ValidationIssue]) -> bool:

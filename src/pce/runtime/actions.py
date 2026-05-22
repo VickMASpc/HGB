@@ -3,17 +3,20 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 
-from pce.runtime.dialogue import DialogueSystem
+from pce.runtime.dialogue import DialogueSystem, RuntimeChoice
 from pce.runtime.player import Player
 from pce.runtime.scene_manager import SceneManager
-from pce.shared.models import Action, SceneConfig
+from pce.runtime.state import evaluate_condition, object_key
+from pce.shared.models import Action, ProjectConfig, RuntimeState, SceneConfig
 
 
 @dataclass(slots=True)
 class RuntimeContext:
+    project: ProjectConfig
     scene_manager: SceneManager
     player: Player
     dialogue: DialogueSystem
+    state: RuntimeState
 
     @property
     def current_scene(self) -> SceneConfig:
@@ -50,7 +53,21 @@ class ActionRunner:
             if action.type == "dialogue":
                 npc = next((item for item in self.context.current_scene.npcs if item.id == action.npc), None)
                 if npc is not None:
-                    self.context.dialogue.start_lines(npc.name, npc.lines)
+                    node_id = action.node
+                    node = next((item for item in npc.dialogue_nodes if item.id == node_id), None)
+                    if node is not None:
+                        choices = [
+                            RuntimeChoice(choice.text, choice.target, choice.actions)
+                            for choice in node.choices
+                            if evaluate_condition(
+                                self.context.state,
+                                choice.condition,
+                                self.context.scene_manager.current_scene_id,
+                            )
+                        ]
+                        self.context.dialogue.show_node(node.speaker or npc.name, node.text, choices)
+                    else:
+                        self.context.dialogue.start_lines(npc.name, npc.lines)
                 return
             if action.type == "move_player":
                 self.context.player.move_along(action.path)
@@ -64,7 +81,33 @@ class ActionRunner:
                     )
                     self.context.player._precise_x = float(self.context.player.position[0])
                     self.context.player._precise_y = float(self.context.player.position[1])
+                    self.context.state.current_scene = self.context.scene_manager.current_scene_id
+                    self.context.state.player_position = self.context.player.position
                 continue
             if action.type == "sequence":
                 self.pending.extendleft(reversed(action.actions))
+            if action.type == "set_variable" and action.variable:
+                self.context.state.variables[action.variable] = action.value
+                continue
+            if action.type == "give_item" and action.item:
+                if action.item not in self.context.state.inventory:
+                    self.context.state.inventory.append(action.item)
+                continue
+            if action.type == "remove_item" and action.item:
+                if action.item in self.context.state.inventory:
+                    self.context.state.inventory.remove(action.item)
+                continue
+            if action.type == "set_object_enabled" and action.object_id:
+                key = object_key(self.context.scene_manager.current_scene_id, action.object_id)
+                self.context.state.object_enabled[key] = bool(action.enabled)
+                continue
+            if action.type == "conditional":
+                selected = action.if_actions
+                if not evaluate_condition(
+                    self.context.state,
+                    action.condition,
+                    self.context.scene_manager.current_scene_id,
+                ):
+                    selected = action.else_actions
+                self.pending.extendleft(reversed(selected))
 

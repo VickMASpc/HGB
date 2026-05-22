@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "title": "Mini Adventure",
   "start_scene": "town_square",
   "resolution": {
@@ -15,6 +15,14 @@
     "scenes/town_square.json",
     "scenes/clubhouse.json",
     "scenes/garage.json"
+  ],
+  "items": [
+    {
+      "id": "clubhouse_key",
+      "name": "Clubhouse Key",
+      "description": "A bright key for the clubhouse door.",
+      "sprite": null
+    }
   ]
 }
 

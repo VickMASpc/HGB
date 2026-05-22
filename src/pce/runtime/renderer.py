@@ -18,6 +18,7 @@ class Renderer:
         self.small_font = pygame.font.Font(None, 20)
         self.backgrounds: dict[str, object] = {}
         self.player_sprite = self._load_image(project.player.sprite, (48, 72))
+        self.item_sprites = {item.id: self._load_image(item.sprite, (32, 32)) for item in project.items}
 
     def _load_image(self, relative_path: str | None, fallback_size: tuple[int, int]) -> object | None:
         if not relative_path:
@@ -36,6 +37,8 @@ class Renderer:
         scene: SceneConfig,
         player_position: tuple[int, int],
         subtitle: tuple[str, str] | None,
+        choices: list[str],
+        inventory: list[str],
         debug: bool,
     ) -> None:
         pygame = self.pygame
@@ -56,6 +59,13 @@ class Renderer:
             else:
                 pygame.draw.rect(self.screen, (140, 92, 172), rect, border_radius=4)
 
+        for item in scene.items:
+            image = self._load_item_image(item.item_id, scene)
+            if image:
+                self.screen.blit(image, (item.rect[0], item.rect[1]))
+            else:
+                pygame.draw.rect(self.screen, (220, 180, 80), item.rect, border_radius=4)
+
         px, py = player_position
         if self.player_sprite:
             self.screen.blit(self.player_sprite, (px - 24, py - 72))
@@ -65,8 +75,13 @@ class Renderer:
         if debug:
             self._draw_debug(scene)
         if subtitle:
-            self._draw_subtitle(*subtitle)
+            self._draw_subtitle(*subtitle, choices)
+        if inventory:
+            self._draw_inventory(inventory)
         pygame.display.flip()
+
+    def _load_item_image(self, item_id: str, scene: SceneConfig) -> object | None:
+        return self.item_sprites.get(item_id)
 
     def _draw_debug(self, scene: SceneConfig) -> None:
         pygame = self.pygame
@@ -80,19 +95,30 @@ class Renderer:
                 pygame.draw.lines(self.screen, (95, 196, 134), False, exit_data.walk_path, 3)
             for point in exit_data.walk_path:
                 pygame.draw.circle(self.screen, (95, 196, 134), point, 5)
+        for item in scene.items:
+            pygame.draw.rect(self.screen, (220, 180, 80), item.rect, 2)
+            self._label(item.id, (item.rect[0], item.rect[1] - 18), (220, 180, 80))
 
     def _label(self, text: str, position: tuple[int, int], color: tuple[int, int, int]) -> None:
         surface = self.small_font.render(text, True, color)
         self.screen.blit(surface, position)
 
-    def _draw_subtitle(self, speaker: str, text: str) -> None:
+    def _draw_subtitle(self, speaker: str, text: str, choices: list[str]) -> None:
         pygame = self.pygame
         width, height = self.screen.get_size()
-        box = pygame.Rect(80, height - 125, width - 160, 82)
+        box_height = 82 + max(0, len(choices)) * 24
+        box = pygame.Rect(80, height - 43 - box_height, width - 160, box_height)
         pygame.draw.rect(self.screen, (12, 14, 18), box, border_radius=8)
         pygame.draw.rect(self.screen, (235, 235, 235), box, 2, border_radius=8)
         speaker_surface = self.small_font.render(speaker, True, (164, 210, 255))
         text_surface = self.font.render(text, True, (250, 250, 250))
         self.screen.blit(speaker_surface, (box.x + 18, box.y + 12))
         self.screen.blit(text_surface, (box.x + 18, box.y + 36))
+        for index, choice in enumerate(choices[:4], start=1):
+            choice_surface = self.small_font.render(f"{index}. {choice}", True, (255, 230, 150))
+            self.screen.blit(choice_surface, (box.x + 18, box.y + 48 + index * 22))
+
+    def _draw_inventory(self, inventory: list[str]) -> None:
+        surface = self.small_font.render("Inventory: " + ", ".join(inventory), True, (250, 250, 250))
+        self.screen.blit(surface, (12, 10))
 

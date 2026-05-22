@@ -5,8 +5,12 @@ from typing import Any
 
 from pce.shared.models import (
     Action,
+    Condition,
+    DialogueChoice,
+    DialogueNode,
     Exit,
     Hotspot,
+    ItemDefinition,
     LayerConfig,
     NPC,
     PlayerConfig,
@@ -14,7 +18,9 @@ from pce.shared.models import (
     ProjectConfig,
     Rect,
     Resolution,
+    RuntimeState,
     SceneConfig,
+    SceneItem,
     SpawnPoint,
 )
 
@@ -31,16 +37,39 @@ def _rect(raw: Any) -> Rect:
     return int(raw[0]), int(raw[1]), int(raw[2]), int(raw[3])
 
 
+def condition_from_dict(data: dict[str, Any] | None) -> Condition | None:
+    if not data:
+        return None
+    return Condition(
+        type=data.get("type", "always"),
+        variable=data.get("variable"),
+        operator=str(data.get("operator", "==")),
+        value=data.get("value", True),
+        item=data.get("item"),
+        object_id=data.get("object_id"),
+        condition=condition_from_dict(data.get("condition")),
+    )
+
+
 def action_from_dict(data: dict[str, Any]) -> Action:
     return Action(
         type=data["type"],
         speaker=data.get("speaker"),
         text=data.get("text"),
         npc=data.get("npc"),
+        node=data.get("node"),
         path=[_point(point) for point in data.get("path", [])],
         scene=data.get("scene"),
         spawn=data.get("spawn"),
         actions=[action_from_dict(action) for action in data.get("actions", [])],
+        variable=data.get("variable"),
+        value=data.get("value"),
+        item=data.get("item"),
+        object_id=data.get("object_id"),
+        enabled=data.get("enabled"),
+        condition=condition_from_dict(data.get("condition")),
+        if_actions=[action_from_dict(action) for action in data.get("if_actions", [])],
+        else_actions=[action_from_dict(action) for action in data.get("else_actions", [])],
     )
 
 
@@ -61,6 +90,34 @@ def project_from_dict(data: dict[str, Any]) -> ProjectConfig:
             default_spawn=str(player.get("default_spawn", "start")),
         ),
         scenes=[str(scene) for scene in data.get("scenes", [])],
+        items=[
+            ItemDefinition(
+                id=str(item.get("id", "")),
+                name=str(item.get("name", item.get("id", "Item"))),
+                description=str(item.get("description", "")),
+                sprite=item.get("sprite"),
+            )
+            for item in data.get("items", [])
+        ],
+    )
+
+
+def dialogue_choice_from_dict(data: dict[str, Any]) -> DialogueChoice:
+    return DialogueChoice(
+        text=str(data.get("text", "")),
+        target=data.get("target"),
+        actions=[action_from_dict(action) for action in data.get("actions", [])],
+        condition=condition_from_dict(data.get("condition")),
+    )
+
+
+def dialogue_node_from_dict(data: dict[str, Any]) -> DialogueNode:
+    return DialogueNode(
+        id=str(data.get("id", "")),
+        speaker=str(data.get("speaker", "")),
+        text=str(data.get("text", "")),
+        choices=[dialogue_choice_from_dict(choice) for choice in data.get("choices", [])],
+        actions=[action_from_dict(action) for action in data.get("actions", [])],
     )
 
 
@@ -118,9 +175,33 @@ def scene_from_dict(data: dict[str, Any]) -> SceneConfig:
                 position=_point(npc.get("position", [0, 0])),
                 lines=[str(line) for line in npc.get("lines", [])],
                 on_click=[action_from_dict(action) for action in npc.get("on_click", [])],
+                dialogue_nodes=[
+                    dialogue_node_from_dict(node) for node in npc.get("dialogue_nodes", [])
+                ],
             )
             for npc in data.get("npcs", [])
         ],
+        items=[
+            SceneItem(
+                id=str(item.get("id", "")),
+                item_id=str(item.get("item_id", "")),
+                rect=_rect(item.get("rect", [0, 0, 32, 32])),
+                layer=str(item.get("layer", "hotspots")),
+                enabled=bool(item.get("enabled", True)),
+                on_click=[action_from_dict(action) for action in item.get("on_click", [])],
+            )
+            for item in data.get("items", [])
+        ],
+    )
+
+
+def runtime_state_from_dict(data: dict[str, Any]) -> RuntimeState:
+    return RuntimeState(
+        current_scene=str(data.get("current_scene", "")),
+        player_position=_point(data.get("player_position", [0, 0])),
+        variables=dict(data.get("variables", {})),
+        inventory=[str(item) for item in data.get("inventory", [])],
+        object_enabled={str(key): bool(value) for key, value in data.get("object_enabled", {}).items()},
     )
 
 

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "scene_1",
+  "name": "Scene 1",
+  "background": "assets/backgrounds/scene_1.png",
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "hotspots",
+      "type": "hotspots",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "characters",
+      "type": "characters",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "foreground",
+      "type": "foreground",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "spawns": [
+    {
+      "id": "start",
+      "position": [
+        120,
+        400
+      ],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "look",
+      "name": "Look Around",
+      "rect": [
+        400,
+        260,
+        150,
+        100
+      ],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "This looks like an adventure.",
+          "path": [],
+          "actions": []
+        }
+      ]
+    }
+  ],
+  "exits": [],
+  "npcs": []
+}

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "town_square",
   "name": "Town Square",
   "background": "assets/backgrounds/town_square.png",
@@ -39,9 +39,25 @@
       "enabled": true,
       "on_click": [
         {
-          "type": "say",
-          "speaker": "Player",
-          "text": "It's a mailbox."
+          "type": "conditional",
+          "condition": {
+            "type": "has_item",
+            "item": "clubhouse_key"
+          },
+          "if_actions": [
+            {
+              "type": "say",
+              "speaker": "Player",
+              "text": "I already found the clubhouse key."
+            }
+          ],
+          "else_actions": [
+            {
+              "type": "say",
+              "speaker": "Player",
+              "text": "It's a mailbox. Something shiny is beside it."
+            }
+          ]
         }
       ]
     }
@@ -63,10 +79,85 @@
       "sprite": "assets/sprites/dog.png",
       "position": [620, 390],
       "lines": ["Woof!", "Let's go explore."],
+      "dialogue_nodes": [
+        {
+          "id": "hello",
+          "speaker": "Dog",
+          "text": "Want a hint?",
+          "choices": [
+            {
+              "text": "Yes, please.",
+              "target": "hint"
+            },
+            {
+              "text": "I found the key.",
+              "target": "done",
+              "condition": {
+                "type": "has_item",
+                "item": "clubhouse_key"
+              }
+            }
+          ]
+        },
+        {
+          "id": "hint",
+          "speaker": "Dog",
+          "text": "Check the mailbox before going to the clubhouse.",
+          "choices": []
+        },
+        {
+          "id": "done",
+          "speaker": "Dog",
+          "text": "Great! Now the clubhouse door should open.",
+          "choices": [
+            {
+              "text": "Let's go.",
+              "actions": [
+                {
+                  "type": "set_variable",
+                  "variable": "dog_ready",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "on_click": [
         {
           "type": "dialogue",
-          "npc": "dog"
+          "npc": "dog",
+          "node": "hello"
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "mailbox_key",
+      "item_id": "clubhouse_key",
+      "rect": [555, 390, 32, 28],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "give_item",
+          "item": "clubhouse_key"
+        },
+        {
+          "type": "set_object_enabled",
+          "object_id": "mailbox_key",
+          "enabled": false
+        },
+        {
+          "type": "set_variable",
+          "variable": "found_key",
+          "value": true
+        },
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "I found the clubhouse key!"
         }
       ]
     }

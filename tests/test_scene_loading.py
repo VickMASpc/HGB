@@ -10,6 +10,8 @@ def test_loads_valid_scene(sample_project: Path) -> None:
     scene = load_scene(sample_project, "scenes/town_square.json")
     assert scene.id == "town_square"
     assert scene.hotspots[0].id == "mailbox"
+    assert scene.items[0].item_id == "clubhouse_key"
+    assert scene.npcs[0].dialogue_nodes[0].id == "hello"
 
 
 def test_rejects_missing_background(sample_project: Path) -> None:

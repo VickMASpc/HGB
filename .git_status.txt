@@ -1,0 +1,83 @@
+﻿On branch master
+Your branch and 'origin/master' have diverged,
+and have 1 and 1 different commits each, respectively.
+  (use "git pull" if you want to integrate the remote branch with yours)
+
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+	both modified:   src/pce/editor/app.py
+	both modified:   src/pce/editor/canvas.py
+	both modified:   src/pce/editor/project_controller.py
+	both modified:   src/pce/runtime/scene_runtime.py
+	both added:      tests/test_editor_controller.py
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .gitignore
+	modified:   PRD.txt
+	modified:   README.md
+	modified:   examples/mini_adventure/assets/backgrounds/clubhouse.png
+	modified:   examples/mini_adventure/assets/backgrounds/garage.png
+	modified:   examples/mini_adventure/assets/backgrounds/town_square.png
+	modified:   examples/mini_adventure/assets/sprites/dog.png
+	modified:   examples/mini_adventure/assets/sprites/player.png
+	modified:   examples/mini_adventure/game.json
+	modified:   examples/mini_adventure/scenes/clubhouse.json
+	modified:   examples/mini_adventure/scenes/garage.json
+	modified:   examples/mini_adventure/scenes/scene_1.json
+	modified:   examples/mini_adventure/scenes/town_square.json
+	modified:   pyproject.toml
+	modified:   src/pce/__init__.py
+	modified:   src/pce/editor/__init__.py
+	modified:   src/pce/editor/main.py
+	modified:   src/pce/editor/panels/__init__.py
+	modified:   src/pce/editor/panels/action_list_panel.py
+	modified:   src/pce/editor/panels/asset_browser.py
+	modified:   src/pce/editor/panels/dialogue_panel.py
+	modified:   src/pce/editor/panels/project_panel.py
+	modified:   src/pce/editor/panels/properties_panel.py
+	modified:   src/pce/editor/panels/scene_panel.py
+	modified:   src/pce/editor/panels/validation_panel.py
+	modified:   src/pce/editor/preview_bridge.py
+	modified:   src/pce/editor/tools/__init__.py
+	modified:   src/pce/editor/tools/exit_tool.py
+	modified:   src/pce/editor/tools/hotspot_tool.py
+	modified:   src/pce/editor/tools/npc_tool.py
+	modified:   src/pce/editor/tools/path_tool.py
+	modified:   src/pce/editor/tools/select_tool.py
+	modified:   src/pce/runtime/__init__.py
+	modified:   src/pce/runtime/actions.py
+	modified:   src/pce/runtime/app.py
+	modified:   src/pce/runtime/debug_overlay.py
+	modified:   src/pce/runtime/dialogue.py
+	modified:   src/pce/runtime/engine.py
+	modified:   src/pce/runtime/hotspot.py
+	modified:   src/pce/runtime/input.py
+	modified:   src/pce/runtime/main.py
+	modified:   src/pce/runtime/movement.py
+	modified:   src/pce/runtime/player.py
+	modified:   src/pce/runtime/renderer.py
+	modified:   src/pce/runtime/scene_manager.py
+	modified:   src/pce/shared/__init__.py
+	modified:   src/pce/shared/asset_paths.py
+	modified:   src/pce/shared/constants.py
+	modified:   src/pce/shared/models.py
+	modified:   src/pce/shared/schema.py
+	modified:   src/pce/shared/serialization.py
+	modified:   src/pce/shared/validation.py
+	modified:   tests/conftest.py
+	modified:   tests/test_action_execution.py
+	modified:   tests/test_project_loading.py
+	modified:   tests/test_scene_loading.py
+	modified:   tests/test_validation.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.git_status.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")

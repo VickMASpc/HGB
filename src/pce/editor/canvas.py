@@ -21,7 +21,6 @@ class CanvasHit:
     kind: str
     object_id: str
     mode: str = "move"
-    point_index: int | None = None
 
 
 class CanvasState:
@@ -35,8 +34,6 @@ class CanvasState:
         self.drag_origin: tuple[int, int] | None = None
         self.original_rect: tuple[int, int, int, int] | None = None
         self.original_position: tuple[int, int] | None = None
-        self.original_path: list[tuple[int, int]] | None = None
-        self.drag_point_index: int | None = None
 
     def snap(self, value: int) -> int:
         if not self.snap_to_grid:
@@ -59,9 +56,6 @@ class CanvasState:
 
     def hit_test(self, scene: SceneConfig, point: tuple[int, int]) -> CanvasHit | None:
         for exit_data in reversed(scene.exits):
-            for index, path_point in enumerate(exit_data.walk_path):
-                if point_in_rect(point, (path_point[0] - 8, path_point[1] - 8, 16, 16)):
-                    return CanvasHit("exit", exit_data.id, "path_point", index)
             x, y, width, height = exit_data.rect
             handle = (x + width - 10, y + height - 10, 20, 20)
             if point_in_rect(point, handle):
@@ -78,9 +72,6 @@ class CanvasState:
         for npc in reversed(scene.npcs):
             if point_in_rect(point, npc_rect(npc)):
                 return CanvasHit("npc", npc.id)
-        for item in reversed(scene.items):
-            if point_in_rect(point, item.rect):
-                return CanvasHit("item", item.id)
         for spawn in reversed(scene.spawns):
             x, y = spawn.position
             if point_in_rect(point, (x - 10, y - 10, 20, 20)):
@@ -96,12 +87,10 @@ class CanvasState:
         self.selected_id = hit.object_id
         self.dragging = True
         self.drag_mode = hit.mode
-        self.drag_point_index = hit.point_index
         self.drag_origin = point
         item = selected_item(scene, hit.kind, hit.object_id)
         self.original_rect = getattr(item, "rect", None)
         self.original_position = getattr(item, "position", None)
-        self.original_path = list(getattr(item, "walk_path", []))
         return hit
 
     def drag_to(self, scene: SceneConfig, point: tuple[int, int]) -> None:
@@ -112,12 +101,7 @@ class CanvasState:
             return
         dx = self.snap(point[0] - self.drag_origin[0])
         dy = self.snap(point[1] - self.drag_origin[1])
-        if self.drag_mode == "path_point" and self.original_path is not None and self.drag_point_index is not None:
-            path = list(self.original_path)
-            x, y = path[self.drag_point_index]
-            path[self.drag_point_index] = (self.snap(x + dx), self.snap(y + dy))
-            item.walk_path = path
-        elif hasattr(item, "rect") and self.original_rect is not None:
+        if hasattr(item, "rect") and self.original_rect is not None:
             x, y, width, height = self.original_rect
             if self.drag_mode == "resize":
                 item.rect = (x, y, max(self.grid_size, width + dx), max(self.grid_size, height + dy))
@@ -132,8 +116,6 @@ class CanvasState:
         self.drag_origin = None
         self.original_rect = None
         self.original_position = None
-        self.original_path = None
-        self.drag_point_index = None
 
 
 def selected_item(scene: SceneConfig, kind: str | None, object_id: str | None):
@@ -144,7 +126,6 @@ def selected_item(scene: SceneConfig, kind: str | None, object_id: str | None):
         "exit": scene.exits,
         "npc": scene.npcs,
         "spawn": scene.spawns,
-        "item": scene.items,
     }
     for item in collections.get(kind or "", []):
         if item.id == object_id:

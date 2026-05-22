@@ -15,7 +15,6 @@ class EditorApp:
         self.canvas = CanvasState()
         self.status = "No project open."
         self._last_autosave_check = time.monotonic()
-        self._textures: dict[str, tuple[str, int, int]] = {}
         if project is not None:
             self.controller.open_project(project)
             self.status = f"Opened {project}"
@@ -75,8 +74,6 @@ class EditorApp:
                     dpg.add_button(label="Add Exit", callback=lambda: self._add_exit(dpg))
                     dpg.add_button(label="Add NPC", callback=lambda: self._add_npc(dpg))
                     dpg.add_button(label="Add Spawn", callback=lambda: self._add_spawn(dpg))
-                    dpg.add_button(label="Add Item Definition", callback=lambda: self._add_item_definition(dpg))
-                    dpg.add_button(label="Add Scene Item", callback=lambda: self._add_scene_item(dpg))
 
                 with dpg.child_window(width=700, height=650, border=True):
                     dpg.add_text("Scene Canvas")
@@ -93,19 +90,13 @@ class EditorApp:
                     dpg.add_input_intx(tag="prop_pos", label="position", size=2, width=240)
                     dpg.add_input_text(tag="prop_background", label="background", width=240)
                     dpg.add_input_text(tag="prop_sprite", label="sprite", width=240)
-                    dpg.add_input_text(tag="prop_item_id", label="item id", width=240)
                     dpg.add_input_text(tag="prop_target_scene", label="target scene", width=240)
                     dpg.add_input_text(tag="prop_target_spawn", label="target spawn", width=240)
                     dpg.add_input_text(tag="prop_walk_path", label="walk path", width=240)
                     dpg.add_input_text(tag="prop_lines", label="lines | separated", width=240)
-                    dpg.add_combo(tag="action_type", label="action", items=["say", "dialogue", "move_player", "change_scene", "sequence", "give_item", "set_variable", "set_object_enabled", "conditional"], default_value="say", width=240)
+                    dpg.add_combo(tag="action_type", label="action", items=["say", "dialogue", "move_player", "change_scene", "sequence"], default_value="say", width=240)
                     dpg.add_input_text(tag="action_speaker", label="speaker", default_value="Player", width=240)
                     dpg.add_input_text(tag="action_text", label="text", width=240)
-                    dpg.add_input_text(tag="action_item", label="action item", width=240)
-                    dpg.add_input_text(tag="action_object", label="action object", width=240)
-                    dpg.add_input_text(tag="action_variable", label="variable", width=240)
-                    dpg.add_input_text(tag="action_value", label="value", width=240)
-                    dpg.add_checkbox(tag="action_enabled", label="enabled", default_value=False)
                     dpg.add_button(label="Apply Properties", callback=lambda: self._apply_properties(dpg))
                     dpg.add_button(label="Import NPC Sprite", callback=lambda: self._import_npc_sprite(dpg))
 
@@ -228,16 +219,6 @@ class EditorApp:
         self.status = "Added spawn."
         self._refresh(dpg)
 
-    def _add_item_definition(self, dpg) -> None:
-        item = self.controller.add_item_definition()
-        self.status = f"Added item definition {item.id}."
-        self._refresh(dpg)
-
-    def _add_scene_item(self, dpg) -> None:
-        self.controller.add_scene_item()
-        self.status = "Added scene item."
-        self._refresh(dpg)
-
     def _set_start_scene(self, dpg) -> None:
         self.controller.set_current_scene_as_start()
         self.status = "Current scene is now the start scene."
@@ -295,7 +276,6 @@ class EditorApp:
         item = self._selected_item()
         if item is None:
             return
-        self.controller.record_undo()
         if self.canvas.selected_kind != "scene":
             item.id = dpg.get_value("prop_id")
         if hasattr(item, "name"):
@@ -308,8 +288,6 @@ class EditorApp:
             item.background = dpg.get_value("prop_background")
         if hasattr(item, "sprite"):
             item.sprite = dpg.get_value("prop_sprite") or None
-        if hasattr(item, "item_id"):
-            item.item_id = dpg.get_value("prop_item_id")
         if hasattr(item, "target_scene"):
             item.target_scene = dpg.get_value("prop_target_scene")
         if hasattr(item, "target_spawn"):
@@ -332,20 +310,6 @@ class EditorApp:
 
     def _action_from_fields(self, dpg, item) -> Action:
         action_type = dpg.get_value("action_type") or "say"
-        if action_type == "give_item":
-            return Action(type="give_item", item=dpg.get_value("action_item") or dpg.get_value("prop_item_id"))
-        if action_type == "set_object_enabled":
-            return Action(
-                type="set_object_enabled",
-                object_id=dpg.get_value("action_object") or getattr(item, "id", ""),
-                enabled=bool(dpg.get_value("action_enabled")),
-            )
-        if action_type == "set_variable":
-            return Action(
-                type="set_variable",
-                variable=dpg.get_value("action_variable"),
-                value=self._parse_action_value(dpg.get_value("action_value")),
-            )
         if action_type == "dialogue":
             return Action(type="dialogue", npc=getattr(item, "id", ""))
         if action_type == "move_player":
@@ -372,17 +336,6 @@ class EditorApp:
             speaker=dpg.get_value("action_speaker") or "Player",
             text=dpg.get_value("action_text") or "",
         )
-
-    @staticmethod
-    def _parse_action_value(value: str):
-        if value.lower() == "true":
-            return True
-        if value.lower() == "false":
-            return False
-        try:
-            return int(value)
-        except ValueError:
-            return value
 
     @staticmethod
     def _parse_points(value: str) -> list[tuple[int, int]]:
@@ -412,7 +365,6 @@ class EditorApp:
         if scene is None or point is None:
             return
         if self.canvas.begin_drag(scene, point):
-            self.controller.record_undo()
             self._load_selected_properties(dpg)
             self._refresh_objects(dpg)
             self._draw_canvas(dpg)
@@ -469,7 +421,6 @@ class EditorApp:
         dpg.set_value("prop_pos", getattr(item, "position", (0, 0)))
         dpg.set_value("prop_background", getattr(item, "background", ""))
         dpg.set_value("prop_sprite", getattr(item, "sprite", "") or "")
-        dpg.set_value("prop_item_id", getattr(item, "item_id", ""))
         dpg.set_value("prop_target_scene", getattr(item, "target_scene", ""))
         dpg.set_value("prop_target_spawn", getattr(item, "target_spawn", ""))
         dpg.set_value("prop_walk_path", self._format_points(getattr(item, "walk_path", [])))
@@ -480,11 +431,6 @@ class EditorApp:
             dpg.set_value("action_type", action.type)
             dpg.set_value("action_speaker", action.speaker or "")
             dpg.set_value("action_text", action.text or "")
-            dpg.set_value("action_item", action.item or "")
-            dpg.set_value("action_object", action.object_id or "")
-            dpg.set_value("action_variable", action.variable or "")
-            dpg.set_value("action_value", "" if action.value is None else str(action.value))
-            dpg.set_value("action_enabled", bool(action.enabled))
 
     def _draw_canvas(self, dpg) -> None:
         scene = self.controller.current_scene
@@ -544,22 +490,4 @@ class EditorApp:
             if layer.id == layer_id:
                 return layer.visible
         return True
-
-    def _texture_for(self, dpg, relative_path: str | None) -> tuple[str, int, int] | None:
-        if not relative_path or self.controller.project_root is None:
-            return None
-        path = self.controller.project_root / relative_path
-        if not path.exists():
-            return None
-        key = str(path)
-        if key in self._textures:
-            return self._textures[key]
-        try:
-            width, height, _channels, data = dpg.load_image(str(path))
-            tag = f"texture_{len(self._textures)}"
-            dpg.add_static_texture(width, height, data, tag=tag, parent="texture_registry")
-        except Exception:
-            return None
-        self._textures[key] = (tag, width, height)
-        return self._textures[key]
 

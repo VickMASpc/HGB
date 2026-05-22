@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pce.runtime.state import object_key
-from pce.shared.models import Action, Exit, NPC, Point, Rect, RuntimeState, SceneConfig
+from pce.shared.models import Action, Exit, NPC, Point, Rect, SceneConfig
 
 
 def point_in_rect(point: Point, rect: Rect) -> bool:

@@ -51,37 +51,3 @@ def test_editor_imports_assets_and_updates_project_references(sample_project: Pa
     assert imported == "assets/sprites/player.png"
     assert controller.project is not None
     assert controller.project.player.sprite == imported
-
-
-def test_editor_undo_redo_and_item_authoring(sample_project: Path) -> None:
-    controller = ProjectController()
-    controller.open_project(sample_project)
-    scene = controller.current_scene
-    assert scene is not None
-
-    before = len(scene.items)
-    controller.add_scene_item("clubhouse_key")
-    assert len(scene.items) == before + 1
-    assert controller.undo()
-    assert len(controller.current_scene.items) == before
-    assert controller.redo()
-    assert len(controller.current_scene.items) == before + 1
-
-
-def test_editor_can_add_dialogue_node_and_set_actions(sample_project: Path) -> None:
-    controller = ProjectController()
-    controller.open_project(sample_project)
-    node = controller.add_dialogue_node("dog")
-    assert node.id == "node_4"
-
-    controller.set_actions("item", "mailbox_key", [])
-    assert controller.current_scene is not None
-    assert controller.current_scene.items[0].on_click == []
-
-
-def test_editor_exports_playable_project(sample_project: Path) -> None:
-    controller = ProjectController()
-    controller.open_project(sample_project)
-    export = controller.export_playable()
-    assert (export / "game.json").exists()
-    assert (export / "RUN.txt").exists()

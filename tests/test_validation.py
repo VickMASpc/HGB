@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pce.shared.serialization import load_project, load_scenes
@@ -31,12 +32,14 @@ def test_detects_duplicate_ids(sample_project: Path) -> None:
 
 def test_detects_bad_rectangles(sample_project: Path) -> None:
     path = sample_project / "scenes/town_square.json"
-    path.write_text(path.read_text(encoding="utf-8").replace('"rect": [420, 260, 120, 150]', '"rect": [420, 260, 0, 150]'), encoding="utf-8")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["hotspots"][0]["rect"] = [420, 260, 0, 150]
+    path.write_text(json.dumps(data), encoding="utf-8")
     assert "INVALID_RECT" in _codes(sample_project)
 
 
 def test_detects_missing_asset_paths(sample_project: Path) -> None:
-    (sample_project / "assets/sprites/dog.png").unlink()
+    (sample_project / "assets/sprites/dog1.png").unlink()
     assert "MISSING_NPC_SPRITE" in _codes(sample_project)
 
 
@@ -56,4 +59,3 @@ def test_detects_invalid_variable_name(sample_project: Path) -> None:
     path = sample_project / "scenes/town_square.json"
     path.write_text(path.read_text(encoding="utf-8").replace('"variable": "found_key"', '"variable": "1bad"'), encoding="utf-8")
     assert "INVALID_VARIABLE_NAME" in _codes(sample_project)
-

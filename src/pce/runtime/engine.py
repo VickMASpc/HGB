@@ -9,7 +9,7 @@ from pce.runtime.player import Player
 from pce.runtime.renderer import Renderer
 from pce.runtime.scene_manager import SceneManager
 from pce.runtime.scene_runtime import SceneRuntime
-from pce.runtime.state import load_state, save_state
+from pce.runtime.state import load_state, load_state_if_exists, save_state
 from pce.shared.models import RuntimeState
 from pce.shared.serialization import load_project, load_scenes
 from pce.shared.validation import has_errors, validate_project
@@ -29,7 +29,7 @@ class Engine:
         if has_errors(issues):
             formatted = "\n".join(f"{issue.code}: {issue.message}" for issue in issues)
             raise ValueError(f"Project validation failed:\n{formatted}")
-        loaded_state = load_state(project_root, slot) if slot else None
+        loaded_state = load_state_if_exists(project_root, slot) if slot else None
         self.scene_manager = SceneManager(
             self.project,
             self.scenes,

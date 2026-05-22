@@ -26,7 +26,10 @@
   "spawns": [
     {
       "id": "start",
-      "position": [120, 390],
+      "position": [
+        120,
+        390
+      ],
       "facing": "right"
     }
   ],
@@ -34,30 +37,46 @@
     {
       "id": "mailbox",
       "name": "Mailbox",
-      "rect": [420, 260, 120, 150],
+      "rect": [
+        420,
+        260,
+        120,
+        130
+      ],
       "layer": "hotspots",
       "enabled": true,
       "on_click": [
         {
-          "type": "conditional",
-          "condition": {
-            "type": "has_item",
-            "item": "clubhouse_key"
-          },
-          "if_actions": [
-            {
-              "type": "say",
-              "speaker": "Player",
-              "text": "I already found the clubhouse key."
-            }
-          ],
-          "else_actions": [
-            {
-              "type": "say",
-              "speaker": "Player",
-              "text": "It's a mailbox. Something shiny is beside it."
-            }
-          ]
+          "type": "say",
+          "speaker": "Player",
+          "text": "",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
+        }
+      ]
+    },
+    {
+      "id": "billboard",
+      "name": "Billboard",
+      "rect": [
+        200,
+        120,
+        140,
+        90
+      ],
+      "layer": "hotspots",
+      "enabled": true,
+      "on_click": [
+        {
+          "type": "say",
+          "speaker": "Player",
+          "text": "There is something here.",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
         }
       ]
     }
@@ -66,19 +85,55 @@
     {
       "id": "to_clubhouse",
       "name": "Go to Clubhouse",
-      "rect": [850, 230, 80, 230],
-      "walk_path": [[500, 390], [720, 385], [875, 370]],
+      "rect": [
+        850,
+        230,
+        80,
+        230
+      ],
+      "walk_path": [
+        [
+          140,
+          400
+        ],
+        [
+          720,
+          420
+        ],
+        [
+          875,
+          370
+        ]
+      ],
       "target_scene": "clubhouse",
-      "target_spawn": "entrance"
+      "target_spawn": "entrance",
+      "layer": "hotspots"
     }
   ],
   "npcs": [
     {
       "id": "dog",
       "name": "Dog",
-      "sprite": "assets/sprites/dog.png",
-      "position": [620, 390],
-      "lines": ["Woof!", "Let's go explore."],
+      "sprite": "assets/sprites/dog1.png",
+      "position": [
+        620,
+        390
+      ],
+      "lines": [
+        "Woof!",
+        "Let's go explore."
+      ],
+      "on_click": [
+        {
+          "type": "dialogue",
+          "npc": "dog",
+          "node": "hello",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
+        }
+      ],
       "dialogue_nodes": [
         {
           "id": "hello",
@@ -87,23 +142,29 @@
           "choices": [
             {
               "text": "Yes, please.",
-              "target": "hint"
+              "target": "hint",
+              "actions": []
             },
             {
               "text": "I found the key.",
               "target": "done",
+              "actions": [],
               "condition": {
                 "type": "has_item",
+                "operator": "==",
+                "value": true,
                 "item": "clubhouse_key"
               }
             }
-          ]
+          ],
+          "actions": []
         },
         {
           "id": "hint",
           "speaker": "Dog",
           "text": "Check the mailbox before going to the clubhouse.",
-          "choices": []
+          "choices": [],
+          "actions": []
         },
         {
           "id": "done",
@@ -115,19 +176,17 @@
               "actions": [
                 {
                   "type": "set_variable",
+                  "path": [],
+                  "actions": [],
                   "variable": "dog_ready",
-                  "value": true
+                  "value": true,
+                  "if_actions": [],
+                  "else_actions": []
                 }
               ]
             }
-          ]
-        }
-      ],
-      "on_click": [
-        {
-          "type": "dialogue",
-          "npc": "dog",
-          "node": "hello"
+          ],
+          "actions": []
         }
       ]
     }
@@ -136,31 +195,51 @@
     {
       "id": "mailbox_key",
       "item_id": "clubhouse_key",
-      "rect": [555, 390, 32, 28],
+      "rect": [
+        555,
+        390,
+        32,
+        28
+      ],
       "layer": "hotspots",
       "enabled": true,
       "on_click": [
         {
           "type": "give_item",
-          "item": "clubhouse_key"
+          "path": [],
+          "actions": [],
+          "item": "clubhouse_key",
+          "if_actions": [],
+          "else_actions": []
         },
         {
           "type": "set_object_enabled",
+          "path": [],
+          "actions": [],
           "object_id": "mailbox_key",
-          "enabled": false
+          "enabled": false,
+          "if_actions": [],
+          "else_actions": []
         },
         {
           "type": "set_variable",
+          "path": [],
+          "actions": [],
           "variable": "found_key",
-          "value": true
+          "value": true,
+          "if_actions": [],
+          "else_actions": []
         },
         {
           "type": "say",
           "speaker": "Player",
-          "text": "I found the clubhouse key!"
+          "text": "I found the clubhouse key!",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
         }
       ]
     }
   ]
 }
-

@@ -7,7 +7,10 @@
   "spawns": [
     {
       "id": "door",
-      "position": [120, 390],
+      "position": [
+        120,
+        390
+      ],
       "facing": "right"
     }
   ],
@@ -15,14 +18,23 @@
     {
       "id": "toolbox",
       "name": "Toolbox",
-      "rect": [460, 320, 120, 90],
+      "rect": [
+        460,
+        320,
+        120,
+        90
+      ],
       "layer": "hotspots",
       "enabled": true,
       "on_click": [
         {
           "type": "say",
           "speaker": "Player",
-          "text": "No inventory in v1, but it looks useful."
+          "text": "I wonder whta could be in this toolbox.",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
         }
       ]
     }
@@ -31,4 +43,3 @@
   "npcs": [],
   "items": []
 }
-

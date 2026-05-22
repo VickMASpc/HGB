@@ -48,7 +48,14 @@ def save_state(project_root: Path, slot: str, state: RuntimeState) -> Path:
 
 def load_state(project_root: Path, slot: str) -> RuntimeState:
     safe_slot = _safe_slot(slot)
-    return runtime_state_from_dict(load_json(project_root / "saves" / f"{safe_slot}.json"))
+    return runtime_state_from_dict(load_json(state_path(project_root, safe_slot)))
+
+
+def load_state_if_exists(project_root: Path, slot: str) -> RuntimeState | None:
+    path = state_path(project_root, slot)
+    if not path.exists():
+        return None
+    return runtime_state_from_dict(load_json(path))
 
 
 def list_save_slots(project_root: Path) -> list[str]:
@@ -60,6 +67,10 @@ def list_save_slots(project_root: Path) -> list[str]:
 
 def state_to_dict(state: RuntimeState) -> dict:
     return to_plain_data(state)
+
+
+def state_path(project_root: Path, slot: str) -> Path:
+    return project_root / "saves" / f"{_safe_slot(slot)}.json"
 
 
 def _safe_slot(slot: str) -> str:

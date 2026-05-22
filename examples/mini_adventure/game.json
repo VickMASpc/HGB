@@ -20,9 +20,7 @@
     {
       "id": "clubhouse_key",
       "name": "Clubhouse Key",
-      "description": "A bright key for the clubhouse door.",
-      "sprite": null
+      "description": "A bright key for the clubhouse door."
     }
   ]
 }
-

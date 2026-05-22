@@ -59,6 +59,33 @@ class CanvasTransform:
             offset_y=(display_height - scene_height) / 2,
         )
 
+    @classmethod
+    def from_view(
+        cls,
+        logical_width: int,
+        logical_height: int,
+        display_width: int,
+        display_height: int,
+        zoom: float,
+        pan: tuple[float, float],
+    ) -> "CanvasTransform":
+        fitted = cls.fit(logical_width, logical_height, display_width, display_height)
+        zoom = min(max(zoom, 0.2), 6.0)
+        scale = fitted.scale * zoom
+        fitted_center_x = fitted.offset_x + logical_width * fitted.scale / 2
+        fitted_center_y = fitted.offset_y + logical_height * fitted.scale / 2
+        scene_width = logical_width * scale
+        scene_height = logical_height * scale
+        return cls(
+            logical_width=max(1, logical_width),
+            logical_height=max(1, logical_height),
+            display_width=max(1, display_width),
+            display_height=max(1, display_height),
+            scale=scale,
+            offset_x=fitted_center_x - scene_width / 2 + pan[0],
+            offset_y=fitted_center_y - scene_height / 2 + pan[1],
+        )
+
     @property
     def scene_rect(self) -> tuple[float, float, float, float]:
         return (
@@ -103,7 +130,20 @@ class CanvasState:
         self.original_position: tuple[int, int] | None = None
         self.original_path: list[tuple[int, int]] | None = None
         self.drag_point_index: int | None = None
+        self.zoom = 1.0
+        self.pan = (0.0, 0.0)
+        self.show_grid = True
         self.view = CanvasTransform.fit(960, 540, 960, 540)
+
+    def reset_view(self) -> None:
+        self.zoom = 1.0
+        self.pan = (0.0, 0.0)
+
+    def zoom_by(self, factor: float) -> None:
+        self.zoom = min(max(self.zoom * factor, 0.2), 6.0)
+
+    def pan_by(self, dx: float, dy: float) -> None:
+        self.pan = (self.pan[0] + dx, self.pan[1] + dy)
 
     def snap(self, value: int) -> int:
         if not self.snap_to_grid:
@@ -124,8 +164,16 @@ class CanvasState:
             self.selected_kind = "spawn"
             self.selected_id = scene.spawns[0].id
 
-    def hit_test(self, scene: SceneConfig, point: tuple[int, int]) -> CanvasHit | None:
+    def hit_test(
+        self,
+        scene: SceneConfig,
+        point: tuple[int, int],
+        *,
+        respect_layers: bool = True,
+    ) -> CanvasHit | None:
         for exit_data in reversed(scene.exits):
+            if respect_layers and not self._editable_layer(scene, exit_data.layer):
+                continue
             for index, path_point in enumerate(exit_data.walk_path):
                 if point_in_rect(point, (path_point[0] - 8, path_point[1] - 8, 16, 16)):
                     return CanvasHit("exit", exit_data.id, "path_point", index)
@@ -136,6 +184,8 @@ class CanvasState:
             if point_in_rect(point, exit_data.rect):
                 return CanvasHit("exit", exit_data.id)
         for hotspot in reversed(scene.hotspots):
+            if respect_layers and not self._editable_layer(scene, hotspot.layer):
+                continue
             x, y, width, height = hotspot.rect
             handle = (x + width - 10, y + height - 10, 20, 20)
             if point_in_rect(point, handle):
@@ -143,12 +193,18 @@ class CanvasState:
             if point_in_rect(point, hotspot.rect):
                 return CanvasHit("hotspot", hotspot.id)
         for npc in reversed(scene.npcs):
+            if respect_layers and not self._editable_layer(scene, "characters"):
+                continue
             if point_in_rect(point, npc_rect(npc)):
                 return CanvasHit("npc", npc.id)
         for item in reversed(scene.items):
+            if respect_layers and not self._editable_layer(scene, item.layer):
+                continue
             if point_in_rect(point, item.rect):
                 return CanvasHit("item", item.id)
         for spawn in reversed(scene.spawns):
+            if respect_layers and not self._editable_layer(scene, "characters"):
+                continue
             x, y = spawn.position
             if point_in_rect(point, (x - 10, y - 10, 20, 20)):
                 return CanvasHit("spawn", spawn.id)
@@ -194,6 +250,36 @@ class CanvasState:
             x, y = self.original_position
             item.position = (self.snap(x + dx), self.snap(y + dy))
 
+    def nudge_selected(self, scene: SceneConfig, dx: int, dy: int) -> bool:
+        item = selected_item(scene, self.selected_kind, self.selected_id)
+        if item is None:
+            return False
+        if not self.selection_editable(scene):
+            return False
+        if hasattr(item, "rect"):
+            x, y, width, height = item.rect
+            item.rect = (x + dx, y + dy, width, height)
+            return True
+        if hasattr(item, "position"):
+            x, y = item.position
+            item.position = (x + dx, y + dy)
+            return True
+        return False
+
+    def selection_editable(self, scene: SceneConfig) -> bool:
+        item = selected_item(scene, self.selected_kind, self.selected_id)
+        if item is None:
+            return False
+        layer = object_layer(self.selected_kind, item)
+        return self._editable_layer(scene, layer)
+
+    @staticmethod
+    def _editable_layer(scene: SceneConfig, layer_id: str) -> bool:
+        for layer in scene.layers:
+            if layer.id == layer_id:
+                return layer.visible and not layer.locked
+        return True
+
     def end_drag(self) -> None:
         self.dragging = False
         self.drag_origin = None
@@ -217,4 +303,10 @@ def selected_item(scene: SceneConfig, kind: str | None, object_id: str | None):
         if item.id == object_id:
             return item
     return None
+
+
+def object_layer(kind: str | None, item) -> str:
+    if kind in {"npc", "spawn"}:
+        return "characters"
+    return getattr(item, "layer", "hotspots")
 

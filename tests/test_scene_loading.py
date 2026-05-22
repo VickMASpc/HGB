@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pce.shared.serialization import load_project, load_scene, load_scenes
@@ -32,8 +33,9 @@ def test_validates_spawn_points(sample_project: Path) -> None:
 
 def test_validates_exits(sample_project: Path) -> None:
     scene_path = sample_project / "scenes/town_square.json"
-    text = scene_path.read_text(encoding="utf-8").replace('"walk_path": [[500, 390], [720, 385], [875, 370]],', '"walk_path": [],')
-    scene_path.write_text(text, encoding="utf-8")
+    data = json.loads(scene_path.read_text(encoding="utf-8"))
+    data["exits"][0]["walk_path"] = []
+    scene_path.write_text(json.dumps(data), encoding="utf-8")
     project = load_project(sample_project)
     issues = validate_project(sample_project, project, load_scenes(sample_project, project))
     assert any(issue.code == "EXIT_WITHOUT_WALK_PATH" for issue in issues)

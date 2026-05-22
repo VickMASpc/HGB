@@ -6,6 +6,7 @@ import pytest
 
 from pce.editor.canvas import CanvasState, CanvasTransform
 from pce.editor.project_controller import ProjectController
+from pce.shared.models import Action, DialogueChoice
 
 
 def test_editor_can_create_core_scene_objects(sample_project: Path) -> None:
@@ -83,6 +84,84 @@ def test_canvas_transform_fits_scene_and_preserves_logical_drag(sample_project: 
     assert scene.hotspots[0].rect == (460, 300, 120, 150)
 
 
+def test_canvas_transform_supports_zoom_and_pan() -> None:
+    view = CanvasTransform.from_view(960, 540, 960, 540, 2.0, (100, -40))
+
+    assert view.scale == pytest.approx(2.0)
+    assert view.scene_rect == pytest.approx((-380, -310, 1540, 770))
+    assert view.display_to_logical_point((580, 230)) == (480, 270)
+
+
+def test_editor_can_duplicate_delete_and_nudge_scene_objects(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+
+    new_id = controller.duplicate_scene_object("hotspot", "mailbox")
+    assert new_id == "mailbox_copy"
+    assert scene.hotspots[-1].id == "mailbox_copy"
+    assert scene.hotspots[-1].rect == (440, 280, 120, 150)
+
+    canvas = CanvasState()
+    canvas.selected_kind = "hotspot"
+    canvas.selected_id = "mailbox_copy"
+    assert canvas.nudge_selected(scene, 20, -20)
+    assert scene.hotspots[-1].rect == (460, 260, 120, 150)
+
+    assert controller.delete_scene_object("hotspot", "mailbox_copy")
+    assert all(hotspot.id != "mailbox_copy" for hotspot in scene.hotspots)
+
+    assert controller.undo()
+    assert any(hotspot.id == "mailbox_copy" for hotspot in controller.current_scene.hotspots)
+
+
+def test_controller_renames_objects_uniquely_and_retargets_actions(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    new_id = controller.update_scene_object("item", "mailbox_key", id="dog")
+
+    assert new_id == "dog_2"
+    assert controller.current_scene is not None
+    item = controller.current_scene.items[0]
+    assert item.id == "dog_2"
+    assert item.on_click[1].object_id == "dog_2"
+    assert controller.is_dirty
+
+
+def test_controller_layer_visibility_locking_and_canvas_hit_testing(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+
+    canvas = CanvasState()
+    assert canvas.hit_test(scene, (430, 270)) is not None
+
+    controller.set_layer_state("hotspots", locked=True)
+    assert canvas.hit_test(scene, (430, 270)) is None
+    canvas.selected_kind = "hotspot"
+    canvas.selected_id = "mailbox"
+    assert not canvas.nudge_selected(scene, 20, 0)
+
+    controller.set_layer_state("hotspots", locked=False, visible=False)
+    assert canvas.hit_test(scene, (430, 270)) is None
+
+
+def test_duplicate_retargets_self_referential_actions(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+
+    new_id = controller.duplicate_scene_object("item", "mailbox_key")
+    assert new_id == "mailbox_key_copy"
+    duplicate = scene.items[-1]
+
+    assert duplicate.on_click[1].object_id == "mailbox_key_copy"
+
+
 def test_editor_imports_assets_and_updates_project_references(sample_project: Path) -> None:
     controller = ProjectController()
     controller.open_project(sample_project)
@@ -119,6 +198,47 @@ def test_editor_can_add_dialogue_node_and_set_actions(sample_project: Path) -> N
     controller.set_actions("item", "mailbox_key", [])
     assert controller.current_scene is not None
     assert controller.current_scene.items[0].on_click == []
+
+
+def test_controller_updates_dialogue_nodes_and_cleans_choice_targets(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    controller.update_dialogue_node(
+        "dog",
+        "hint",
+        new_id="clue",
+        speaker="Dog",
+        text="The mailbox is worth checking.",
+        choices=[DialogueChoice(text="Thanks", target="hello")],
+        actions=[Action(type="set_variable", variable="heard_hint", value=True)],
+    )
+    scene = controller.current_scene
+    assert scene is not None
+    npc = scene.npcs[0]
+
+    assert npc.dialogue_nodes[0].choices[0].target == "clue"
+    assert npc.dialogue_nodes[1].id == "clue"
+    assert npc.dialogue_nodes[1].actions[0].variable == "heard_hint"
+
+    assert controller.delete_dialogue_node("dog", "clue")
+    assert npc.dialogue_nodes[0].choices[0].target is None
+
+
+def test_controller_reorders_actions_through_set_actions(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+
+    item = scene.items[0]
+    reordered = [item.on_click[2], item.on_click[0], item.on_click[1], item.on_click[3]]
+    controller.set_actions("item", "mailbox_key", reordered)
+
+    assert scene.items[0].on_click[0].type == "set_variable"
+    assert controller.undo()
+    assert controller.current_scene is not None
+    assert controller.current_scene.items[0].on_click[0].type == "give_item"
 
 
 def test_editor_exports_playable_project(sample_project: Path) -> None:

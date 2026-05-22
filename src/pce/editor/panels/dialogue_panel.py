@@ -4,7 +4,7 @@ import copy
 
 from pce.editor.panels.action_list_panel import actions_from_json, action_to_json
 from pce.editor.panels.action_list_panel import condition_from_json, condition_to_json
-from pce.shared.models import DialogueChoice
+from pce.shared.models import Action, Condition, DialogueChoice
 
 
 def choice_label(index: int, choice: DialogueChoice) -> str:
@@ -29,6 +29,23 @@ def merge_choice_from_fields(
         choice.condition = condition_from_json(condition_json)
     if actions_json.strip():
         choice.actions = actions_from_json(actions_json)
+    return choice
+
+
+def merge_choice_from_visual_fields(
+    existing: DialogueChoice | None,
+    *,
+    text: str,
+    target: str = "",
+    condition: Condition | None = None,
+    actions: list[Action] | None = None,
+) -> DialogueChoice:
+    choice = copy.deepcopy(existing) if existing is not None else DialogueChoice(text=text)
+    choice.text = text
+    choice.target = target or None
+    choice.condition = copy.deepcopy(condition)
+    if actions is not None:
+        choice.actions = copy.deepcopy(actions)
     return choice
 
 

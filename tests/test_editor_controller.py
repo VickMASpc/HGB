@@ -8,6 +8,10 @@ from pce.editor.canvas import CanvasState, CanvasTransform
 from pce.editor.project_controller import ProjectController
 from pce.editor.panels.action_list_panel import action_to_json, condition_to_json, merge_action_from_fields
 from pce.editor.panels.dialogue_panel import merge_choice_from_fields
+from pce.editor.panels.visual_editors import (
+    merge_action_from_visual_fields,
+    merge_condition_from_fields,
+)
 from pce.shared.models import Action, Condition, DialogueChoice
 
 
@@ -394,6 +398,61 @@ def test_dialogue_choice_editor_preserves_condition_and_actions() -> None:
     )
 
     assert edited == choice
+
+
+def test_visual_action_editor_preserves_nested_groups_without_aliasing() -> None:
+    nested = [Action(type="sequence", actions=[Action(type="say", speaker="A", text="nested")])]
+    condition = merge_condition_from_fields(
+        None,
+        condition_type="not",
+        nested_condition=Condition(type="object_enabled", object_id="door"),
+    )
+
+    edited = merge_action_from_visual_fields(
+        None,
+        action_type="conditional",
+        condition=condition,
+        if_actions=nested,
+        else_actions=[Action(type="remove_item", item="key")],
+    )
+
+    nested[0].actions[0].text = "mutated"
+
+    assert edited.condition is not condition
+    assert edited.condition is not None
+    assert edited.condition.condition is not None
+    assert edited.condition.condition.object_id == "door"
+    assert edited.if_actions[0].actions[0].text == "nested"
+    assert edited.else_actions[0].type == "remove_item"
+
+
+def test_duplicate_retargets_nested_self_references(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+    item = scene.items[0]
+    item.on_click.append(
+        Action(
+            type="conditional",
+            condition=Condition(type="object_enabled", object_id=item.id),
+            if_actions=[
+                Action(
+                    type="sequence",
+                    actions=[Action(type="set_object_enabled", object_id=item.id, enabled=False)],
+                )
+            ],
+        )
+    )
+
+    new_id = controller.duplicate_scene_object("item", item.id)
+
+    assert new_id == "mailbox_key_copy"
+    duplicate = scene.items[-1]
+    nested = duplicate.on_click[-1]
+    assert nested.condition is not None
+    assert nested.condition.object_id == new_id
+    assert nested.if_actions[0].actions[0].object_id == new_id
 
 
 def test_noop_mutations_do_not_mark_dirty(sample_project: Path) -> None:

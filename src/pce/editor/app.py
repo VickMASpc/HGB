@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import time
 from pathlib import Path
 
@@ -18,20 +19,26 @@ from pce.editor.panels.action_list_panel import (
     actions_from_json,
     action_to_json,
     condition_to_json,
-    merge_action_from_fields,
     parse_action_value,
 )
 from pce.editor.panels.dialogue_panel import (
     choice_actions_json,
     choice_condition_json,
     choice_label,
-    merge_choice_from_fields,
+    merge_choice_from_visual_fields,
 )
 from pce.editor.panels.properties_panel import inspector_field_visibility
 from pce.editor.panels.theme import apply_theme
+from pce.editor.panels.visual_editors import (
+    CONDITION_OPERATORS,
+    CONDITION_TYPES,
+    action_label,
+    merge_action_from_visual_fields,
+    merge_condition_from_fields,
+)
 from pce.editor.preview_bridge import play_current_scene, run_full_game
 from pce.editor.project_controller import ProjectController, ProjectSnapshot
-from pce.shared.models import Action, DialogueChoice
+from pce.shared.models import Action, Condition, DialogueChoice
 
 
 class EditorApp:
@@ -288,33 +295,79 @@ class EditorApp:
                     dpg.add_input_text(tag="action_variable", label="Variable", width=-1)
                     dpg.add_input_text(tag="action_value", label="Value", width=-1)
                     dpg.add_checkbox(tag="action_enabled", label="Enabled", default_value=False)
+                    dpg.add_text("Condition", tag="action_condition_header")
+                    dpg.add_combo(
+                        tag="action_condition_type",
+                        label="Condition",
+                        items=CONDITION_TYPES,
+                        default_value="always",
+                        width=-1,
+                        callback=lambda _s, _a: self._refresh_action_editor(dpg),
+                    )
+                    dpg.add_input_text(tag="action_condition_variable", label="Variable", width=-1)
+                    dpg.add_combo(
+                        tag="action_condition_operator",
+                        label="Operator",
+                        items=CONDITION_OPERATORS,
+                        default_value="==",
+                        width=-1,
+                    )
+                    dpg.add_input_text(tag="action_condition_value", label="Value", width=-1)
+                    dpg.add_combo(tag="action_condition_item", label="Item", items=[], width=-1)
+                    dpg.add_combo(tag="action_condition_object", label="Object", items=[], width=-1)
+                    dpg.add_combo(
+                        tag="action_condition_not_type",
+                        label="Not Condition",
+                        items=CONDITION_TYPES[:-1],
+                        default_value="always",
+                        width=-1,
+                    )
+                    dpg.add_text("Nested Actions", tag="action_actions_header")
+                    dpg.add_listbox(tag="action_actions_list", items=[], num_items=3, width=-1)
+                    with dpg.group(horizontal=True, tag="action_actions_buttons"):
+                        dpg.add_button(label="Add", callback=lambda: self._add_nested_action(dpg, "sequence"))
+                        dpg.add_button(label="Remove", callback=lambda: self._remove_nested_action(dpg, "sequence"))
+                    dpg.add_text("If Actions", tag="action_if_actions_header")
+                    dpg.add_listbox(tag="action_if_actions_list", items=[], num_items=3, width=-1)
+                    with dpg.group(horizontal=True, tag="action_if_actions_buttons"):
+                        dpg.add_button(label="Add", callback=lambda: self._add_nested_action(dpg, "if"))
+                        dpg.add_button(label="Remove", callback=lambda: self._remove_nested_action(dpg, "if"))
+                    dpg.add_text("Else Actions", tag="action_else_actions_header")
+                    dpg.add_listbox(tag="action_else_actions_list", items=[], num_items=3, width=-1)
+                    with dpg.group(horizontal=True, tag="action_else_actions_buttons"):
+                        dpg.add_button(label="Add", callback=lambda: self._add_nested_action(dpg, "else"))
+                        dpg.add_button(label="Remove", callback=lambda: self._remove_nested_action(dpg, "else"))
                     dpg.add_input_text(
                         tag="action_condition_json",
-                        label="Condition JSON",
+                        label="Advanced Condition JSON",
                         width=-1,
                         multiline=True,
                         height=70,
+                        show=False,
                     )
                     dpg.add_input_text(
                         tag="action_actions_json",
-                        label="Nested Actions JSON",
+                        label="Advanced Nested Actions JSON",
                         width=-1,
                         multiline=True,
                         height=90,
+                        show=False,
                     )
                     dpg.add_input_text(
                         tag="action_if_actions_json",
-                        label="If Actions JSON",
+                        label="Advanced If Actions JSON",
                         width=-1,
                         multiline=True,
                         height=90,
+                        show=False,
                     )
                     dpg.add_input_text(
                         tag="action_else_actions_json",
-                        label="Else Actions JSON",
+                        label="Advanced Else Actions JSON",
                         width=-1,
                         multiline=True,
                         height=90,
+                        show=False,
                     )
                     dpg.add_button(label="Apply Action", callback=lambda: self._apply_action(dpg))
                     dpg.add_separator()
@@ -332,12 +385,18 @@ class EditorApp:
                     dpg.add_input_text(tag="dialogue_node_id", label="Node Id", width=-1)
                     dpg.add_input_text(tag="dialogue_speaker", label="Speaker", width=-1)
                     dpg.add_input_text(tag="dialogue_text", label="Text", width=-1, multiline=True, height=80)
+                    dpg.add_text("Node Actions", tag="dialogue_node_actions_header")
+                    dpg.add_listbox(tag="dialogue_node_action_list", items=[], num_items=3, width=-1)
+                    with dpg.group(horizontal=True, tag="dialogue_node_action_buttons"):
+                        dpg.add_button(label="Add", callback=lambda: self._add_dialogue_node_action(dpg))
+                        dpg.add_button(label="Remove", callback=lambda: self._remove_dialogue_node_action(dpg))
                     dpg.add_input_text(
                         tag="dialogue_node_actions_json",
-                        label="Node Actions JSON",
+                        label="Advanced Node Actions JSON",
                         width=-1,
                         multiline=True,
                         height=72,
+                        show=False,
                     )
                     dpg.add_text("Choices")
                     dpg.add_listbox(
@@ -353,19 +412,53 @@ class EditorApp:
                         dpg.add_button(label="Remove Choice", callback=lambda: self._remove_dialogue_choice(dpg))
                     dpg.add_input_text(tag="dialogue_choice_text", label="Choice Text", width=-1)
                     dpg.add_combo(tag="dialogue_choice_target", label="Choice Target", items=[], width=-1)
+                    dpg.add_text("Choice Condition", tag="dialogue_choice_condition_header")
+                    dpg.add_combo(
+                        tag="dialogue_choice_condition_type",
+                        label="Condition",
+                        items=CONDITION_TYPES,
+                        default_value="always",
+                        width=-1,
+                        callback=lambda _s, _a: self._refresh_dialogue_choice_condition_editor(dpg),
+                    )
+                    dpg.add_input_text(tag="dialogue_choice_condition_variable", label="Variable", width=-1)
+                    dpg.add_combo(
+                        tag="dialogue_choice_condition_operator",
+                        label="Operator",
+                        items=CONDITION_OPERATORS,
+                        default_value="==",
+                        width=-1,
+                    )
+                    dpg.add_input_text(tag="dialogue_choice_condition_value", label="Value", width=-1)
+                    dpg.add_combo(tag="dialogue_choice_condition_item", label="Item", items=[], width=-1)
+                    dpg.add_combo(tag="dialogue_choice_condition_object", label="Object", items=[], width=-1)
+                    dpg.add_combo(
+                        tag="dialogue_choice_condition_not_type",
+                        label="Not Condition",
+                        items=CONDITION_TYPES[:-1],
+                        default_value="always",
+                        width=-1,
+                    )
+                    dpg.add_text("Choice Actions", tag="dialogue_choice_actions_header")
+                    dpg.add_listbox(tag="dialogue_choice_action_list", items=[], num_items=3, width=-1)
+                    with dpg.group(horizontal=True, tag="dialogue_choice_action_buttons"):
+                        dpg.add_button(label="Add", callback=lambda: self._add_dialogue_choice_action(dpg))
+                        dpg.add_button(label="Remove", callback=lambda: self._remove_dialogue_choice_action(dpg))
                     dpg.add_input_text(
                         tag="dialogue_choice_condition_json",
-                        label="Choice Condition JSON",
+                        label="Advanced Choice Condition JSON",
                         width=-1,
                         multiline=True,
                         height=72,
+                        show=False,
                     )
                     dpg.add_input_text(
                         tag="dialogue_choice_actions_json",
-                        label="Choice Actions JSON",
+                        label="Advanced Choice Actions JSON",
                         width=-1,
                         multiline=True,
                         height=90,
+                        show=False,
                     )
                     dpg.add_button(label="Apply Dialogue Node", callback=lambda: self._apply_dialogue_node(dpg))
                     dpg.add_button(label="Apply Properties", callback=lambda: self._apply_properties(dpg))
@@ -826,6 +919,47 @@ class EditorApp:
             self.status = "Applied action."
         self._refresh(dpg)
 
+    def _add_nested_action(self, dpg, group: str) -> None:
+        target = self._selected_action_target()
+        if target is None:
+            return
+        kind, object_id, actions = target
+        if not actions:
+            return
+        index = min(self._selected_action_index, len(actions) - 1)
+        edited = copy.deepcopy(actions)
+        action = Action(type="say", speaker="Player", text="New nested line.")
+        if group == "sequence":
+            edited[index].actions.append(action)
+        elif group == "if":
+            edited[index].if_actions.append(action)
+        else:
+            edited[index].else_actions.append(action)
+        self.controller.set_actions(kind, object_id, edited)
+        self.status = "Added nested action."
+        self._refresh(dpg)
+
+    def _remove_nested_action(self, dpg, group: str) -> None:
+        target = self._selected_action_target()
+        if target is None:
+            return
+        kind, object_id, actions = target
+        if not actions:
+            return
+        index = min(self._selected_action_index, len(actions) - 1)
+        edited = copy.deepcopy(actions)
+        nested = {
+            "sequence": edited[index].actions,
+            "if": edited[index].if_actions,
+            "else": edited[index].else_actions,
+        }[group]
+        if not nested:
+            return
+        nested.pop()
+        self.controller.set_actions(kind, object_id, edited)
+        self.status = "Removed nested action."
+        self._refresh(dpg)
+
     def _selected_action_target(self) -> tuple[str, str, list[Action]] | None:
         item = self._selected_item()
         if (
@@ -874,7 +1008,7 @@ class EditorApp:
                 new_id=dpg.get_value("dialogue_node_id"),
                 speaker=dpg.get_value("dialogue_speaker"),
                 text=dpg.get_value("dialogue_text"),
-                actions=self._actions_from_editor_json(dpg.get_value("dialogue_node_actions_json")),
+                actions=list(node.actions) if (node := self._selected_dialogue_node()) is not None else [],
             )
         except Exception as exc:
             self.status = f"Apply dialogue node failed: {exc}"
@@ -903,12 +1037,16 @@ class EditorApp:
             self._selected_dialogue_choice_index = 0
         index = min(self._selected_dialogue_choice_index, len(choices) - 1)
         try:
-            choices[index] = merge_choice_from_fields(
+            choices[index] = merge_choice_from_visual_fields(
                 choices[index],
                 text=dpg.get_value("dialogue_choice_text") or "",
                 target=dpg.get_value("dialogue_choice_target") or "",
-                condition_json=dpg.get_value("dialogue_choice_condition_json") or "",
-                actions_json=dpg.get_value("dialogue_choice_actions_json") or "",
+                condition=self._condition_from_fields(
+                    dpg,
+                    "dialogue_choice_condition",
+                    choices[index].condition,
+                ),
+                actions=choices[index].actions,
             )
             self.controller.update_dialogue_node(self.canvas.selected_id, node.id, choices=choices)
         except Exception as exc:
@@ -928,6 +1066,47 @@ class EditorApp:
         self.controller.update_dialogue_node(self.canvas.selected_id, node.id, choices=choices)
         self._selected_dialogue_choice_index = max(0, self._selected_dialogue_choice_index - 1)
         self.status = "Removed dialogue choice."
+        self._refresh(dpg)
+
+    def _add_dialogue_node_action(self, dpg) -> None:
+        node = self._selected_dialogue_node()
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None or node is None:
+            return
+        actions = [*node.actions, Action(type="say", speaker=node.speaker, text="New node action.")]
+        self.controller.update_dialogue_node(self.canvas.selected_id, node.id, actions=actions)
+        self.status = "Added dialogue node action."
+        self._refresh(dpg)
+
+    def _remove_dialogue_node_action(self, dpg) -> None:
+        node = self._selected_dialogue_node()
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None or node is None or not node.actions:
+            return
+        self.controller.update_dialogue_node(self.canvas.selected_id, node.id, actions=node.actions[:-1])
+        self.status = "Removed dialogue node action."
+        self._refresh(dpg)
+
+    def _add_dialogue_choice_action(self, dpg) -> None:
+        node = self._selected_dialogue_node()
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None or node is None or not node.choices:
+            return
+        choices = copy.deepcopy(node.choices)
+        index = min(self._selected_dialogue_choice_index, len(choices) - 1)
+        choices[index].actions.append(Action(type="say", speaker=node.speaker, text="New choice action."))
+        self.controller.update_dialogue_node(self.canvas.selected_id, node.id, choices=choices)
+        self.status = "Added dialogue choice action."
+        self._refresh(dpg)
+
+    def _remove_dialogue_choice_action(self, dpg) -> None:
+        node = self._selected_dialogue_node()
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None or node is None or not node.choices:
+            return
+        choices = copy.deepcopy(node.choices)
+        index = min(self._selected_dialogue_choice_index, len(choices) - 1)
+        if not choices[index].actions:
+            return
+        choices[index].actions.pop()
+        self.controller.update_dialogue_node(self.canvas.selected_id, node.id, choices=choices)
+        self.status = "Removed dialogue choice action."
         self._refresh(dpg)
 
     def _select_dialogue_choice(self, dpg, value: str) -> None:
@@ -958,7 +1137,8 @@ class EditorApp:
 
     def _action_from_fields(self, dpg, item, existing: Action | None = None) -> Action:
         action_type = dpg.get_value("action_type") or "say"
-        return merge_action_from_fields(
+        condition = self._condition_from_fields(dpg, "action_condition", existing.condition if existing else None)
+        return merge_action_from_visual_fields(
             existing,
             action_type=action_type,
             speaker=dpg.get_value("action_speaker") or "Player",
@@ -973,10 +1153,10 @@ class EditorApp:
             variable=dpg.get_value("action_variable") or "",
             value=dpg.get_value("action_value") or "",
             enabled=bool(dpg.get_value("action_enabled")),
-            actions_json=dpg.get_value("action_actions_json") or "",
-            condition_json=dpg.get_value("action_condition_json") or "",
-            if_actions_json=dpg.get_value("action_if_actions_json") or "",
-            else_actions_json=dpg.get_value("action_else_actions_json") or "",
+            actions=existing.actions if existing else [],
+            condition=condition,
+            if_actions=existing.if_actions if existing else [],
+            else_actions=existing.else_actions if existing else [],
         )
 
     @staticmethod
@@ -1157,11 +1337,15 @@ class EditorApp:
         dpg.configure_item("prop_target_spawn", items=spawn_ids)
         dpg.configure_item("action_item", items=item_ids)
         dpg.configure_item("action_object", items=object_ids)
+        dpg.configure_item("action_condition_item", items=item_ids)
+        dpg.configure_item("action_condition_object", items=object_ids)
         dpg.configure_item("action_npc", items=npc_ids)
         dpg.configure_item("action_node", items=node_ids)
         dpg.configure_item("action_scene", items=scene_ids)
         dpg.configure_item("action_spawn", items=spawn_ids)
         dpg.configure_item("dialogue_choice_target", items=["", *node_ids])
+        dpg.configure_item("dialogue_choice_condition_item", items=item_ids)
+        dpg.configure_item("dialogue_choice_condition_object", items=object_ids)
 
     def _load_selected_properties(self, dpg) -> None:
         item = self._selected_item()
@@ -1196,10 +1380,12 @@ class EditorApp:
             dpg.set_value("action_variable", action.variable or "")
             dpg.set_value("action_value", "" if action.value is None else str(action.value))
             dpg.set_value("action_enabled", bool(action.enabled))
+            self._set_condition_fields(dpg, "action_condition", action.condition)
             dpg.set_value("action_condition_json", condition_to_json(action.condition))
             dpg.set_value("action_actions_json", action_to_json(action.actions))
             dpg.set_value("action_if_actions_json", action_to_json(action.if_actions))
             dpg.set_value("action_else_actions_json", action_to_json(action.else_actions))
+            self._refresh_nested_action_lists(dpg, action)
         self._refresh_action_list(dpg)
         self._refresh_dialogue_list(dpg)
         self._refresh_reference_dropdowns(dpg)
@@ -1217,6 +1403,8 @@ class EditorApp:
             label = f"Inspector - {kind}:{self.canvas.selected_id}"
         dpg.set_value("inspector_title", label)
         self._refresh_action_editor(dpg)
+        if dpg.does_item_exist("dialogue_choice_condition_type"):
+            self._refresh_dialogue_choice_condition_editor(dpg)
 
     def _refresh_action_list(self, dpg) -> None:
         item = self._selected_item()
@@ -1246,11 +1434,66 @@ class EditorApp:
         dpg.set_value("action_variable", action.variable or "")
         dpg.set_value("action_value", "" if action.value is None else str(action.value))
         dpg.set_value("action_enabled", bool(action.enabled))
+        self._set_condition_fields(dpg, "action_condition", action.condition)
         dpg.set_value("action_condition_json", condition_to_json(action.condition))
         dpg.set_value("action_actions_json", action_to_json(action.actions))
         dpg.set_value("action_if_actions_json", action_to_json(action.if_actions))
         dpg.set_value("action_else_actions_json", action_to_json(action.else_actions))
+        self._refresh_nested_action_lists(dpg, action)
         self._refresh_action_editor(dpg)
+
+    def _set_condition_fields(self, dpg, prefix: str, condition: Condition | None) -> None:
+        if condition is None:
+            dpg.set_value(f"{prefix}_type", "always")
+            dpg.set_value(f"{prefix}_variable", "")
+            dpg.set_value(f"{prefix}_operator", "==")
+            dpg.set_value(f"{prefix}_value", "true")
+            dpg.set_value(f"{prefix}_item", "")
+            dpg.set_value(f"{prefix}_object", "")
+            if dpg.does_item_exist(f"{prefix}_not_type"):
+                dpg.set_value(f"{prefix}_not_type", "always")
+            return
+        dpg.set_value(f"{prefix}_type", condition.type)
+        dpg.set_value(f"{prefix}_variable", condition.variable or "")
+        dpg.set_value(f"{prefix}_operator", condition.operator or "==")
+        dpg.set_value(f"{prefix}_value", "" if condition.value is None else str(condition.value))
+        dpg.set_value(f"{prefix}_item", condition.item or "")
+        dpg.set_value(f"{prefix}_object", condition.object_id or "")
+        if dpg.does_item_exist(f"{prefix}_not_type"):
+            dpg.set_value(f"{prefix}_not_type", condition.condition.type if condition.condition else "always")
+
+    def _condition_from_fields(self, dpg, prefix: str, existing: Condition | None = None) -> Condition | None:
+        condition_type = dpg.get_value(f"{prefix}_type") or "always"
+        nested_condition = None
+        if condition_type == "not":
+            nested_condition = merge_condition_from_fields(
+                existing.condition if existing is not None else None,
+                condition_type=dpg.get_value(f"{prefix}_not_type") or "always",
+            )
+        return merge_condition_from_fields(
+            existing,
+            condition_type=condition_type,
+            variable=dpg.get_value(f"{prefix}_variable") or "",
+            operator=dpg.get_value(f"{prefix}_operator") or "==",
+            value=dpg.get_value(f"{prefix}_value") or "",
+            item=dpg.get_value(f"{prefix}_item") or "",
+            object_id=dpg.get_value(f"{prefix}_object") or "",
+            nested_condition=nested_condition,
+        )
+
+    def _refresh_nested_action_lists(self, dpg, action: Action) -> None:
+        dpg.configure_item(
+            "action_actions_list",
+            items=[f"{index + 1}. {self._action_label(item)}" for index, item in enumerate(action.actions)],
+        )
+        dpg.configure_item(
+            "action_if_actions_list",
+            items=[f"{index + 1}. {self._action_label(item)}" for index, item in enumerate(action.if_actions)],
+        )
+        dpg.configure_item(
+            "action_else_actions_list",
+            items=[f"{index + 1}. {self._action_label(item)}" for index, item in enumerate(action.else_actions)],
+        )
 
     def _refresh_action_editor(self, dpg) -> None:
         action_type = dpg.get_value("action_type") or "say"
@@ -1266,10 +1509,38 @@ class EditorApp:
         dpg.configure_item("action_variable", show=visible and action_type == "set_variable")
         dpg.configure_item("action_value", show=visible and action_type == "set_variable")
         dpg.configure_item("action_enabled", show=visible and action_type == "set_object_enabled")
-        dpg.configure_item("action_condition_json", show=visible and action_type == "conditional")
-        dpg.configure_item("action_actions_json", show=visible and action_type == "sequence")
-        dpg.configure_item("action_if_actions_json", show=visible and action_type == "conditional")
-        dpg.configure_item("action_else_actions_json", show=visible and action_type == "conditional")
+        dpg.configure_item("action_condition_header", show=visible and action_type == "conditional")
+        dpg.configure_item("action_condition_type", show=visible and action_type == "conditional")
+        condition_type = dpg.get_value("action_condition_type") or "always"
+        dpg.configure_item("action_condition_variable", show=visible and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_operator", show=visible and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_value", show=visible and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_item", show=visible and action_type == "conditional" and condition_type == "has_item")
+        dpg.configure_item("action_condition_object", show=visible and action_type == "conditional" and condition_type == "object_enabled")
+        dpg.configure_item("action_condition_not_type", show=visible and action_type == "conditional" and condition_type == "not")
+        dpg.configure_item("action_actions_header", show=visible and action_type == "sequence")
+        dpg.configure_item("action_actions_list", show=visible and action_type == "sequence")
+        dpg.configure_item("action_actions_buttons", show=visible and action_type == "sequence")
+        dpg.configure_item("action_if_actions_header", show=visible and action_type == "conditional")
+        dpg.configure_item("action_if_actions_list", show=visible and action_type == "conditional")
+        dpg.configure_item("action_if_actions_buttons", show=visible and action_type == "conditional")
+        dpg.configure_item("action_else_actions_header", show=visible and action_type == "conditional")
+        dpg.configure_item("action_else_actions_list", show=visible and action_type == "conditional")
+        dpg.configure_item("action_else_actions_buttons", show=visible and action_type == "conditional")
+        dpg.configure_item("action_condition_json", show=False)
+        dpg.configure_item("action_actions_json", show=False)
+        dpg.configure_item("action_if_actions_json", show=False)
+        dpg.configure_item("action_else_actions_json", show=False)
+
+    def _refresh_dialogue_choice_condition_editor(self, dpg) -> None:
+        visible = self.canvas.selected_kind == "npc"
+        condition_type = dpg.get_value("dialogue_choice_condition_type") or "always"
+        dpg.configure_item("dialogue_choice_condition_variable", show=visible and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_operator", show=visible and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_value", show=visible and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_item", show=visible and condition_type == "has_item")
+        dpg.configure_item("dialogue_choice_condition_object", show=visible and condition_type == "object_enabled")
+        dpg.configure_item("dialogue_choice_condition_not_type", show=visible and condition_type == "not")
 
     def _refresh_dialogue_list(self, dpg) -> None:
         item = self._selected_item()
@@ -1299,6 +1570,10 @@ class EditorApp:
         dpg.set_value("dialogue_speaker", node.speaker)
         dpg.set_value("dialogue_text", node.text)
         dpg.set_value("dialogue_node_actions_json", action_to_json(node.actions))
+        dpg.configure_item(
+            "dialogue_node_action_list",
+            items=[f"{index + 1}. {self._action_label(action)}" for index, action in enumerate(node.actions)],
+        )
         self._refresh_dialogue_choice_list(dpg)
 
     def _refresh_dialogue_choice_list(self, dpg) -> None:
@@ -1309,8 +1584,10 @@ class EditorApp:
         if not choices:
             dpg.set_value("dialogue_choice_text", "")
             dpg.set_value("dialogue_choice_target", "")
+            self._set_condition_fields(dpg, "dialogue_choice_condition", None)
             dpg.set_value("dialogue_choice_condition_json", condition_to_json(None))
             dpg.set_value("dialogue_choice_actions_json", action_to_json([]))
+            dpg.configure_item("dialogue_choice_action_list", items=[])
             return
         self._selected_dialogue_choice_index = min(self._selected_dialogue_choice_index, len(choices) - 1)
         dpg.set_value("dialogue_choice_list", labels[self._selected_dialogue_choice_index])
@@ -1323,33 +1600,18 @@ class EditorApp:
         choice = node.choices[min(self._selected_dialogue_choice_index, len(node.choices) - 1)]
         dpg.set_value("dialogue_choice_text", choice.text)
         dpg.set_value("dialogue_choice_target", choice.target or "")
+        self._set_condition_fields(dpg, "dialogue_choice_condition", choice.condition)
         dpg.set_value("dialogue_choice_condition_json", choice_condition_json(choice))
         dpg.set_value("dialogue_choice_actions_json", choice_actions_json(choice))
+        dpg.configure_item(
+            "dialogue_choice_action_list",
+            items=[f"{index + 1}. {self._action_label(action)}" for index, action in enumerate(choice.actions)],
+        )
+        self._refresh_dialogue_choice_condition_editor(dpg)
 
     @staticmethod
     def _action_label(action: Action) -> str:
-        if action.type == "say":
-            return f"say: {action.text or ''}".strip()
-        if action.type == "dialogue":
-            suffix = f"@{action.node}" if action.node else ""
-            return f"dialogue {action.npc or ''}{suffix}".strip()
-        if action.type == "change_scene":
-            return f"change_scene: {action.scene or ''}"
-        if action.type == "give_item":
-            return f"give_item: {action.item or ''}"
-        if action.type == "remove_item":
-            return f"remove_item: {action.item or ''}"
-        if action.type == "set_variable":
-            return f"set_variable: {action.variable or ''}"
-        if action.type == "set_object_enabled":
-            return f"set_object_enabled: {action.object_id or ''}"
-        if action.type == "sequence":
-            return f"sequence: {len(action.actions)} actions"
-        if action.type == "conditional":
-            return f"conditional: {len(action.if_actions)}/{len(action.else_actions)} actions"
-        if action.type == "move_player":
-            return f"move_player: {len(action.path)} points"
-        return action.type
+        return action_label(action)
 
     def _draw_canvas(self, dpg) -> None:
         draw_canvas(self, dpg)

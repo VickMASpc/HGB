@@ -706,10 +706,25 @@ class ProjectController:
     @staticmethod
     def _retarget_duplicate_actions(item, old_id: str) -> None:
         for action in getattr(item, "on_click", []):
-            if action.npc == old_id:
-                action.npc = item.id
-            if action.object_id == old_id:
-                action.object_id = item.id
+            ProjectController._retarget_duplicate_action(action, old_id, item.id)
+
+    @staticmethod
+    def _retarget_duplicate_action(action: Action, old_id: str, new_id: str) -> None:
+        if action.npc == old_id:
+            action.npc = new_id
+        if action.object_id == old_id:
+            action.object_id = new_id
+        ProjectController._retarget_duplicate_condition(action.condition, old_id, new_id)
+        for child in [*action.actions, *action.if_actions, *action.else_actions]:
+            ProjectController._retarget_duplicate_action(child, old_id, new_id)
+
+    @staticmethod
+    def _retarget_duplicate_condition(condition: Condition | None, old_id: str, new_id: str) -> None:
+        if condition is None:
+            return
+        if condition.object_id == old_id:
+            condition.object_id = new_id
+        ProjectController._retarget_duplicate_condition(condition.condition, old_id, new_id)
 
     def _replace_scene_path(self, old_id: str, new_id: str) -> None:
         if self.project is None:

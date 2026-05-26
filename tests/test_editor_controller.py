@@ -8,6 +8,8 @@ from pce.editor.canvas import CanvasState, CanvasTransform
 from pce.editor.project_controller import ProjectController
 from pce.editor.panels.action_list_panel import action_to_json, condition_to_json, merge_action_from_fields
 from pce.editor.panels.dialogue_panel import merge_choice_from_fields
+from pce.editor.panels.dialogue_studio import target_id_from_label, target_options, validate_dialogue_graph
+from pce.editor.panels.properties_panel import inspector_field_visibility
 from pce.editor.panels.visual_editors import (
     merge_action_from_visual_fields,
     merge_condition_from_fields,
@@ -467,6 +469,89 @@ def test_noop_mutations_do_not_mark_dirty(sample_project: Path) -> None:
     controller.update_scene_object("item", "mailbox_key", id="mailbox_key")
 
     assert not controller.is_dirty
+
+
+def test_scenes_workspace_keeps_interaction_forms_out_of_default_inspector() -> None:
+    visible = inspector_field_visibility("npc", True, workspace="Scenes", advanced=False)
+
+    assert visible["prop_name"]
+    assert visible["prop_pos"]
+    assert visible["edit_conversation_button"]
+    assert visible["edit_interaction_button"]
+    assert not visible["action_list"]
+    assert not visible["dialogue_node_list"]
+    assert not visible["prop_id"]
+    assert not visible["prop_layer"]
+
+
+def test_workspace_visibility_exposes_specialized_editors_and_advanced_fields() -> None:
+    dialogue_simple = inspector_field_visibility("npc", True, workspace="Dialogue", advanced=False)
+    logic_advanced = inspector_field_visibility("hotspot", True, workspace="Logic", advanced=True)
+
+    assert dialogue_simple["prop_name"]
+    assert not dialogue_simple["dialogue_node_list"]
+    assert not dialogue_simple["dialogue_node_id"]
+    assert logic_advanced["action_list"]
+    assert logic_advanced["action_condition_type"]
+    assert not logic_advanced["dialogue_node_list"]
+
+
+def test_assets_workspace_hides_scene_object_inspector_fields() -> None:
+    visible = inspector_field_visibility("hotspot", True, workspace="Assets", advanced=True)
+
+    assert not visible["prop_name"]
+    assert not visible["prop_rect"]
+    assert not visible["duplicate_button"]
+    assert not visible["action_list"]
+    assert not visible["edit_interaction_button"]
+
+
+def test_dialogue_studio_helpers_label_targets_and_validate_graph(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    scene = controller.current_scene
+    assert scene is not None
+    npc = scene.npcs[0]
+
+    options = target_options(npc, simple=True)
+    assert options[0] == "End conversation"
+    assert target_id_from_label(npc, options[1]) == npc.dialogue_nodes[0].id
+
+    npc.dialogue_nodes[0].choices.append(DialogueChoice(text="", target="missing"))
+    npc.dialogue_nodes.append(npc.dialogue_nodes[0].__class__(id="orphan", speaker="Dog", text="Lost"))
+
+    issues = validate_dialogue_graph(npc)
+    codes = {issue.code for issue in issues}
+    assert {"EMPTY_RESPONSE", "MISSING_TARGET", "UNREACHABLE_NODE"} <= codes
+
+
+def test_controller_dialogue_studio_operations_preserve_retargeting_and_undo(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    duplicate_id = controller.duplicate_dialogue_node("dog", "hint")
+    assert duplicate_id == "hint_copy"
+
+    choice = controller.add_dialogue_choice("dog", duplicate_id)
+    assert choice.text == "Continue."
+    controller.update_dialogue_choice("dog", duplicate_id, 0, text="Ask again", target="hello")
+    copied_index = controller.duplicate_dialogue_choice("dog", duplicate_id, 0)
+    assert copied_index == 1
+
+    scene = controller.current_scene
+    assert scene is not None
+    npc = scene.npcs[0]
+    duplicate = next(node for node in npc.dialogue_nodes if node.id == duplicate_id)
+    assert duplicate.choices[0].text == "Ask again"
+    assert duplicate.choices[1].target == "hello"
+
+    controller.update_dialogue_node("dog", "hello", new_id="greeting")
+    assert duplicate.choices[0].target == "greeting"
+
+    assert controller.delete_dialogue_choice("dog", duplicate_id, 1)
+    assert len(duplicate.choices) == 1
+    assert controller.undo()
+    assert len(next(node for node in controller.current_scene.npcs[0].dialogue_nodes if node.id == duplicate_id).choices) == 2
 
 
 def test_editor_exports_playable_project(sample_project: Path) -> None:

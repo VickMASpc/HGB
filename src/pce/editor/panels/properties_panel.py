@@ -1,9 +1,148 @@
 from __future__ import annotations
 
 
-def inspector_field_visibility(kind: str | None, has_item: bool) -> dict[str, bool]:
+WORKSPACES = ("Scenes", "Dialogue", "Logic", "Assets")
+
+
+ACTION_FIELD_TAGS = {
+    "actions_header",
+    "action_list",
+    "action_buttons",
+    "action_type",
+    "action_speaker",
+    "action_text",
+    "action_item",
+    "action_object",
+    "action_variable",
+    "action_value",
+    "action_enabled",
+    "action_npc",
+    "action_node",
+    "action_scene",
+    "action_spawn",
+    "action_condition_header",
+    "action_condition_type",
+    "action_condition_variable",
+    "action_condition_operator",
+    "action_condition_value",
+    "action_condition_item",
+    "action_condition_object",
+    "action_condition_not_type",
+    "action_actions_header",
+    "action_actions_list",
+    "action_actions_buttons",
+    "action_if_actions_header",
+    "action_if_actions_list",
+    "action_if_actions_buttons",
+    "action_else_actions_header",
+    "action_else_actions_list",
+    "action_else_actions_buttons",
+    "action_condition_json",
+    "action_actions_json",
+    "action_if_actions_json",
+    "action_else_actions_json",
+}
+
+DIALOGUE_FIELD_TAGS = {
+    "dialogue_header",
+    "dialogue_node_list",
+    "dialogue_buttons",
+    "dialogue_node_id",
+    "dialogue_speaker",
+    "dialogue_text",
+    "dialogue_node_actions_header",
+    "dialogue_node_action_list",
+    "dialogue_node_action_buttons",
+    "dialogue_node_actions_json",
+    "dialogue_choice_list",
+    "dialogue_choice_buttons",
+    "dialogue_choice_text",
+    "dialogue_choice_target",
+    "dialogue_choice_condition_header",
+    "dialogue_choice_condition_type",
+    "dialogue_choice_condition_variable",
+    "dialogue_choice_condition_operator",
+    "dialogue_choice_condition_value",
+    "dialogue_choice_condition_item",
+    "dialogue_choice_condition_object",
+    "dialogue_choice_condition_not_type",
+    "dialogue_choice_actions_header",
+    "dialogue_choice_action_list",
+    "dialogue_choice_action_buttons",
+    "dialogue_choice_condition_json",
+    "dialogue_choice_actions_json",
+}
+
+ADVANCED_FIELD_TAGS = {
+    "prop_id",
+    "prop_layer",
+    "action_condition_header",
+    "action_condition_type",
+    "action_condition_variable",
+    "action_condition_operator",
+    "action_condition_value",
+    "action_condition_item",
+    "action_condition_object",
+    "action_condition_not_type",
+    "action_condition_json",
+    "action_actions_json",
+    "action_if_actions_json",
+    "action_else_actions_json",
+    "dialogue_node_id",
+    "dialogue_node_actions_header",
+    "dialogue_node_action_list",
+    "dialogue_node_action_buttons",
+    "dialogue_node_actions_json",
+    "dialogue_choice_condition_header",
+    "dialogue_choice_condition_type",
+    "dialogue_choice_condition_variable",
+    "dialogue_choice_condition_operator",
+    "dialogue_choice_condition_value",
+    "dialogue_choice_condition_item",
+    "dialogue_choice_condition_object",
+    "dialogue_choice_condition_not_type",
+    "dialogue_choice_actions_header",
+    "dialogue_choice_action_list",
+    "dialogue_choice_action_buttons",
+    "dialogue_choice_condition_json",
+    "dialogue_choice_actions_json",
+}
+
+SCENE_PROPERTY_FIELD_TAGS = {
+    "prop_id",
+    "prop_name",
+    "prop_rect",
+    "prop_pos",
+    "prop_background",
+    "background_button",
+    "prop_sprite",
+    "npc_sprite_button",
+    "player_sprite_button",
+    "prop_item_id",
+    "prop_enabled",
+    "prop_layer",
+    "prop_facing",
+    "prop_target_scene",
+    "prop_target_spawn",
+    "prop_walk_path",
+    "prop_lines",
+    "duplicate_button",
+    "delete_button",
+    "edit_interaction_button",
+    "edit_conversation_button",
+}
+
+
+def inspector_field_visibility(
+    kind: str | None,
+    has_item: bool,
+    *,
+    workspace: str = "Scenes",
+    advanced: bool = False,
+) -> dict[str, bool]:
     action_owner = kind in {"hotspot", "npc", "item"}
-    return {
+    dialogue_owner = kind == "npc"
+    visibility = {
         "prop_id": has_item,
         "prop_name": has_item and kind in {"scene", "hotspot", "exit", "npc"},
         "prop_rect": kind in {"hotspot", "exit", "item"},
@@ -86,4 +225,27 @@ def inspector_field_visibility(kind: str | None, has_item: bool) -> dict[str, bo
         "dialogue_choice_action_buttons": kind == "npc",
         "dialogue_choice_condition_json": False,
         "dialogue_choice_actions_json": False,
+        "edit_interaction_button": workspace == "Scenes" and action_owner,
+        "edit_conversation_button": workspace == "Scenes" and dialogue_owner,
     }
+
+    if workspace == "Scenes":
+        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS:
+            visibility[tag] = False
+    elif workspace == "Dialogue":
+        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS:
+            visibility[tag] = False
+    elif workspace == "Logic":
+        for tag in DIALOGUE_FIELD_TAGS:
+            visibility[tag] = False
+        for tag in ACTION_FIELD_TAGS:
+            visibility[tag] = action_owner
+    elif workspace == "Assets":
+        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS | SCENE_PROPERTY_FIELD_TAGS:
+            visibility[tag] = False
+
+    if not advanced:
+        for tag in ADVANCED_FIELD_TAGS:
+            visibility[tag] = False
+
+    return visibility

@@ -27,7 +27,23 @@ from pce.editor.panels.dialogue_panel import (
     choice_label,
     merge_choice_from_visual_fields,
 )
+from pce.editor.panels.dialogue_studio import (
+    build_dialogue_studio,
+    choice_summary,
+    condition_label,
+    effects_label,
+    target_id_from_label,
+    target_label,
+    target_options,
+    validate_dialogue_graph,
+)
 from pce.editor.panels.properties_panel import inspector_field_visibility
+from pce.editor.panels.story_studio import (
+    build_canvas_toolbar,
+    build_context_entry_buttons,
+    build_scene_sidebar,
+    build_workspace_nav,
+)
 from pce.editor.panels.theme import apply_theme
 from pce.editor.panels.visual_editors import (
     CONDITION_OPERATORS,
@@ -53,6 +69,8 @@ class EditorApp:
         self._selected_dialogue_choice_index = 0
         self._last_pan_point: tuple[float, float] | None = None
         self._pending_drag_undo: ProjectSnapshot | None = None
+        self.active_workspace = "Scenes"
+        self.simple_mode = True
         if project is not None:
             self.controller.open_project(project)
             self.status = f"Opened {project}"
@@ -145,82 +163,33 @@ class EditorApp:
                     dpg.add_menu_item(label="Validate", callback=lambda: self._validate(dpg))
                     dpg.add_menu_item(label="Play Scene", callback=lambda: self._play_scene(dpg))
                     dpg.add_menu_item(label="Run Game", callback=lambda: self._run_game(dpg))
-            with dpg.group(horizontal=True):
-                dpg.add_text("PointClick Editor")
-                dpg.add_spacer(width=18)
-                dpg.add_button(label="Open", callback=lambda: dpg.show_item("project_dialog"))
-                dpg.add_button(label="Save", callback=lambda: self._save(dpg))
-                dpg.add_button(label="Undo", callback=lambda: self._undo(dpg))
-                dpg.add_button(label="Redo", callback=lambda: self._redo(dpg))
-                dpg.add_button(label="Fit", callback=lambda: self._fit_canvas(dpg))
-                dpg.add_button(label="-", callback=lambda: self._zoom_canvas(dpg, 0.85))
-                dpg.add_button(label="+", callback=lambda: self._zoom_canvas(dpg, 1.15))
-                dpg.add_checkbox(
-                    tag="snap_grid",
-                    label="Snap",
-                    default_value=True,
-                    callback=lambda _s, a: self._set_snap(dpg, a),
-                )
-                dpg.add_checkbox(
-                    tag="show_grid",
-                    label="Grid",
-                    default_value=True,
-                    callback=lambda _s, a: self._set_grid(dpg, a),
-                )
-                dpg.add_button(label="Validate", callback=lambda: self._validate(dpg))
-                dpg.add_button(label="Play Scene", callback=lambda: self._play_scene(dpg))
-                dpg.add_button(label="Export", callback=lambda: self._export(dpg))
-                dpg.add_text("", tag="dirty_text")
+            build_workspace_nav(dpg, self)
 
             with dpg.group(horizontal=True):
-                with dpg.child_window(width=300, height=-125, border=True):
-                    dpg.add_text("Scenes")
-                    dpg.add_listbox(
-                        tag="scene_list",
-                        items=[],
-                        num_items=7,
-                        width=-1,
-                        callback=lambda _s, a: self._select_scene(dpg, a),
-                    )
-                    with dpg.group(horizontal=True):
-                        dpg.add_input_text(
-                            tag="new_scene_id",
-                            default_value="scene_2",
-                            width=170,
-                            hint="new scene id",
-                        )
-                        dpg.add_button(label="Create", callback=lambda: self._create_scene(dpg))
-                    with dpg.group(horizontal=True):
-                        dpg.add_button(label="Duplicate Scene", callback=lambda: self._duplicate_scene(dpg))
-                        dpg.add_button(label="Delete Scene", callback=lambda: self._request_delete_scene(dpg))
-                    dpg.add_button(label="Use As Start Scene", callback=lambda: self._set_start_scene(dpg))
-                    dpg.add_separator()
-                    dpg.add_text("Layers")
-                    with dpg.group(tag="layer_list"):
-                        pass
-                    dpg.add_separator()
-                    dpg.add_text("Objects")
-                    dpg.add_listbox(
-                        tag="object_combo",
-                        items=[],
-                        num_items=11,
-                        width=-1,
-                        callback=lambda _s, a: self._select_object(dpg, a),
-                    )
-                    with dpg.group(horizontal=True):
-                        dpg.add_button(label="Hotspot", callback=lambda: self._add_hotspot(dpg))
-                        dpg.add_button(label="Exit", callback=lambda: self._add_exit(dpg))
-                        dpg.add_button(label="NPC", callback=lambda: self._add_npc(dpg))
-                    with dpg.group(horizontal=True):
-                        dpg.add_button(label="Spawn", callback=lambda: self._add_spawn(dpg))
-                        dpg.add_button(label="Item", callback=lambda: self._add_scene_item(dpg))
+                with dpg.child_window(tag="scene_sidebar", width=270, height=-125, border=True):
+                    build_scene_sidebar(dpg, self)
 
-                with dpg.child_window(tag="canvas_panel", width=-345, height=-125, border=True):
+                with dpg.child_window(tag="canvas_panel", width=-390, height=-125, border=True):
+                    build_canvas_toolbar(dpg, self)
                     with dpg.drawlist(tag="canvas_drawlist", width=1, height=1):
                         pass
+                build_dialogue_studio(dpg, self)
 
-                with dpg.child_window(width=335, height=-125, border=True):
+                with dpg.child_window(tag="context_panel", width=380, height=-125, border=True):
                     dpg.add_text("Inspector", tag="inspector_title")
+                    with dpg.group(tag="assets_workspace_panel"):
+                        dpg.add_text("Project Assets")
+                        dpg.add_button(
+                            label="Choose Scene Background...",
+                            callback=lambda: dpg.show_item("background_dialog"),
+                        )
+                        dpg.add_button(
+                            label="Choose Player Sprite...",
+                            callback=lambda: dpg.show_item("player_sprite_dialog"),
+                        )
+                        dpg.add_button(label="Add Item Definition", callback=lambda: self._add_item_definition(dpg))
+                        dpg.add_listbox(tag="asset_item_list", items=[], num_items=8, width=-1)
+                        dpg.add_separator()
                     with dpg.group(horizontal=True):
                         dpg.add_button(label="Duplicate", tag="duplicate_button", callback=lambda: self._duplicate_selected(dpg))
                         dpg.add_button(
@@ -233,6 +202,11 @@ class EditorApp:
                         dpg.add_button(label="Up", callback=lambda: self._nudge_selected(dpg, 0, -self.canvas.grid_size))
                         dpg.add_button(label="Down", callback=lambda: self._nudge_selected(dpg, 0, self.canvas.grid_size))
                         dpg.add_button(label="Right", callback=lambda: self._nudge_selected(dpg, self.canvas.grid_size, 0))
+                    build_context_entry_buttons(
+                        dpg,
+                        open_dialogue=lambda: self._open_dialogue_studio(dpg),
+                        open_logic=lambda: self._set_workspace(dpg, "Logic"),
+                    )
                     dpg.add_input_text(tag="prop_id", label="Id", width=-1)
                     dpg.add_input_text(tag="prop_name", label="Name", width=-1)
                     dpg.add_input_intx(tag="prop_rect", label="Rect", size=4, width=-1)
@@ -559,6 +533,28 @@ class EditorApp:
     def _set_grid(self, dpg, value: bool) -> None:
         self.canvas.show_grid = value
         self._draw_canvas(dpg)
+
+    def _set_workspace(self, dpg, workspace: str) -> None:
+        self.active_workspace = workspace
+        self.status = f"{workspace} workspace."
+        self._refresh(dpg)
+
+    def _open_dialogue_studio(self, dpg) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            self.status = "Select an NPC before opening Dialogue Studio."
+            self._refresh(dpg)
+            return
+        npc = self._studio_npc()
+        if npc is not None and npc.dialogue_nodes and self._selected_dialogue_node_id is None:
+            self._selected_dialogue_node_id = npc.dialogue_nodes[0].id
+        self.active_workspace = "Dialogue"
+        self.status = "Dialogue Studio."
+        self._refresh(dpg)
+
+    def _set_simple_mode(self, dpg, enabled: bool) -> None:
+        self.simple_mode = bool(enabled)
+        self.status = "Simple mode." if self.simple_mode else "Advanced mode."
+        self._refresh(dpg)
 
     def _save(self, dpg) -> None:
         self.controller.save()
@@ -1116,6 +1112,245 @@ class EditorApp:
             self._selected_dialogue_choice_index = 0
         self._load_dialogue_choice_editor(dpg)
 
+    def _studio_npc(self):
+        item = self._selected_item()
+        if self.canvas.selected_kind != "npc" or item is None or not hasattr(item, "dialogue_nodes"):
+            return None
+        return item
+
+    def _studio_add_dialogue_node(self, dpg) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            self.status = "Select an NPC before adding a conversation card."
+            self._refresh(dpg)
+            return
+        node = self.controller.add_dialogue_node(self.canvas.selected_id)
+        self._selected_dialogue_node_id = node.id
+        self.status = "Added conversation card."
+        self._refresh(dpg)
+
+    def _studio_duplicate_dialogue_node(self, dpg, node_id: str) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        self._selected_dialogue_node_id = self.controller.duplicate_dialogue_node(
+            self.canvas.selected_id,
+            node_id,
+        )
+        self.status = "Duplicated conversation card."
+        self._refresh(dpg)
+
+    def _studio_delete_dialogue_node(self, dpg, node_id: str) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        if self.controller.delete_dialogue_node(self.canvas.selected_id, node_id):
+            self._selected_dialogue_node_id = None
+            self.status = "Deleted conversation card."
+            self._refresh(dpg)
+
+    def _select_dialogue_card(self, dpg, node_id: str) -> None:
+        self._selected_dialogue_node_id = node_id
+        self.status = "Focused conversation card."
+        self._refresh(dpg)
+
+    def _studio_apply_dialogue_node(self, dpg, node_id: str) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        try:
+            self._selected_dialogue_node_id = self.controller.update_dialogue_node(
+                self.canvas.selected_id,
+                node_id,
+                new_id=dpg.get_value(f"studio_node_id_{node_id}") if not self.simple_mode else node_id,
+                speaker=dpg.get_value(f"studio_speaker_{node_id}") or "",
+                text=dpg.get_value(f"studio_text_{node_id}") or "",
+                actions=list(node.actions) if (node := self._dialogue_node_by_id(node_id)) is not None else [],
+            )
+        except Exception as exc:
+            self.status = f"Apply conversation card failed: {exc}"
+        else:
+            self.status = "Updated conversation card."
+        self._refresh(dpg)
+
+    def _studio_add_dialogue_choice(self, dpg, node_id: str) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        self.controller.add_dialogue_choice(self.canvas.selected_id, node_id)
+        self._selected_dialogue_node_id = node_id
+        self.status = "Added response button."
+        self._refresh(dpg)
+
+    def _studio_apply_dialogue_choice(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        npc = self._studio_npc()
+        if npc is None:
+            return
+        target = target_id_from_label(
+            npc,
+            dpg.get_value(f"studio_choice_target_{node_id}_{choice_index}") or "End conversation",
+        )
+        try:
+            self.controller.update_dialogue_choice(
+                self.canvas.selected_id,
+                node_id,
+                choice_index,
+                text=dpg.get_value(f"studio_choice_text_{node_id}_{choice_index}") or "",
+                target=target or "",
+            )
+        except Exception as exc:
+            self.status = f"Apply response failed: {exc}"
+        else:
+            self.status = "Updated response button."
+        self._refresh(dpg)
+
+    def _studio_duplicate_dialogue_choice(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        self.controller.duplicate_dialogue_choice(self.canvas.selected_id, node_id, choice_index)
+        self._selected_dialogue_node_id = node_id
+        self.status = "Duplicated response button."
+        self._refresh(dpg)
+
+    def _studio_delete_dialogue_choice(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        if self.controller.delete_dialogue_choice(self.canvas.selected_id, node_id, choice_index):
+            self._selected_dialogue_node_id = node_id
+            self.status = "Deleted response button."
+            self._refresh(dpg)
+
+    def _studio_create_choice_target(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self.controller.add_dialogue_node(self.canvas.selected_id)
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            target=node.id,
+        )
+        self._selected_dialogue_node_id = node.id
+        self.status = "Created and connected a new conversation card."
+        self._refresh(dpg)
+
+    def _studio_apply_choice_condition(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self._dialogue_node_by_id(node_id)
+        if node is None or choice_index >= len(node.choices):
+            return
+        prefix = f"studio_choice_condition_{node_id}_{choice_index}"
+        condition = self._condition_from_fields(dpg, prefix, node.choices[choice_index].condition)
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            condition=condition,
+        )
+        self.status = "Updated response condition."
+        self._refresh(dpg)
+
+    def _studio_add_choice_effect(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self._dialogue_node_by_id(node_id)
+        if node is None or choice_index >= len(node.choices):
+            return
+        choice = node.choices[choice_index]
+        actions = [*choice.actions, Action(type="say", speaker=node.speaker, text="New effect line.")]
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            actions=actions,
+        )
+        self.status = "Added response effect."
+        self._refresh(dpg)
+
+    def _studio_remove_choice_effect(self, dpg, node_id: str, choice_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self._dialogue_node_by_id(node_id)
+        if node is None or choice_index >= len(node.choices) or not node.choices[choice_index].actions:
+            return
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            actions=node.choices[choice_index].actions[:-1],
+        )
+        self.status = "Removed last response effect."
+        self._refresh(dpg)
+
+    def _studio_apply_choice_effect(self, dpg, node_id: str, choice_index: int, effect_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self._dialogue_node_by_id(node_id)
+        if node is None or choice_index >= len(node.choices):
+            return
+        choice = node.choices[choice_index]
+        if effect_index < 0 or effect_index >= len(choice.actions):
+            return
+        prefix = f"studio_choice_effect_{node_id}_{choice_index}_{effect_index}"
+        existing = choice.actions[effect_index]
+        edited = merge_action_from_visual_fields(
+            existing,
+            action_type=dpg.get_value(f"{prefix}_type") or existing.type,
+            speaker=dpg.get_value(f"{prefix}_speaker") or "",
+            text=dpg.get_value(f"{prefix}_text") or "",
+            npc=dpg.get_value(f"{prefix}_npc") or "",
+            node=dpg.get_value(f"{prefix}_node") or "",
+            scene=dpg.get_value(f"{prefix}_scene") or "",
+            spawn=dpg.get_value(f"{prefix}_spawn") or "",
+            item=dpg.get_value(f"{prefix}_item") or "",
+            object_id=dpg.get_value(f"{prefix}_object") or "",
+            variable=dpg.get_value(f"{prefix}_variable") or "",
+            value=dpg.get_value(f"{prefix}_value") or "",
+            enabled=bool(dpg.get_value(f"{prefix}_enabled")),
+            actions=existing.actions,
+            condition=existing.condition,
+            if_actions=existing.if_actions,
+            else_actions=existing.else_actions,
+        )
+        actions = list(choice.actions)
+        actions[effect_index] = edited
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            actions=actions,
+        )
+        self.status = "Updated response effect."
+        self._refresh(dpg)
+
+    def _studio_remove_choice_effect_at(self, dpg, node_id: str, choice_index: int, effect_index: int) -> None:
+        if self.canvas.selected_kind != "npc" or self.canvas.selected_id is None:
+            return
+        node = self._dialogue_node_by_id(node_id)
+        if node is None or choice_index >= len(node.choices):
+            return
+        actions = list(node.choices[choice_index].actions)
+        if effect_index < 0 or effect_index >= len(actions):
+            return
+        del actions[effect_index]
+        self.controller.update_dialogue_choice(
+            self.canvas.selected_id,
+            node_id,
+            choice_index,
+            actions=actions,
+        )
+        self.status = "Removed response effect."
+        self._refresh(dpg)
+
+    def _preview_conversation(self, dpg) -> None:
+        play_current_scene(self.controller)
+        self.status = "Preview launched. Click the NPC in the playtest scene to try the conversation."
+        self._refresh(dpg)
+
+    def _dialogue_node_by_id(self, node_id: str):
+        npc = self._studio_npc()
+        if npc is None:
+            return None
+        return next((node for node in npc.dialogue_nodes if node.id == node_id), None)
+
     def _selected_dialogue_node(self):
         item = self._selected_item()
         if item is None or not hasattr(item, "dialogue_nodes"):
@@ -1246,12 +1481,353 @@ class EditorApp:
             dpg.set_value("project_path", str(self.controller.project_root))
             dpg.configure_item("scene_list", items=list(self.controller.scenes.keys()))
             dpg.set_value("scene_list", self.controller.current_scene_id)
+        dpg.set_value("simple_mode", self.simple_mode)
         dpg.set_value("dirty_text", "Unsaved changes" if self.controller.is_dirty else "Saved")
         dpg.set_value("status_text", self.status)
         self._refresh_layers(dpg)
         self._refresh_objects(dpg)
         self._refresh_inspector_visibility(dpg)
+        self._refresh_assets_panel(dpg)
+        self._refresh_dialogue_studio(dpg)
+        self._refresh_workspace_visibility(dpg)
         self._draw_canvas(dpg)
+
+    def _refresh_workspace_visibility(self, dpg) -> None:
+        is_scenes = self.active_workspace == "Scenes"
+        dpg.configure_item("scene_sidebar", show=self.active_workspace in {"Scenes", "Assets"})
+        dpg.configure_item("canvas_panel", show=self.active_workspace in {"Scenes", "Logic"})
+        dpg.configure_item("dialogue_studio_panel", show=self.active_workspace == "Dialogue")
+        dpg.configure_item("context_panel", show=True)
+        dpg.configure_item("assets_workspace_panel", show=self.active_workspace == "Assets")
+        dpg.configure_item("layers_header", show=is_scenes and not self.simple_mode)
+        dpg.configure_item("layer_list", show=is_scenes and not self.simple_mode)
+        for workspace in ("Scenes", "Dialogue", "Logic", "Assets"):
+            dpg.configure_item(
+                f"workspace_{workspace.lower()}",
+                label=f"[{workspace}]" if workspace == self.active_workspace else workspace,
+            )
+
+    def _refresh_assets_panel(self, dpg) -> None:
+        project = self.controller.project
+        items = [] if project is None else [f"{item.id}: {item.name}" for item in project.items]
+        dpg.configure_item("asset_item_list", items=items)
+
+    def _refresh_dialogue_studio(self, dpg) -> None:
+        dpg.delete_item("dialogue_storyboard", children_only=True)
+        dpg.delete_item("dialogue_graph_overview", children_only=True)
+        npc = self._studio_npc()
+        if npc is None:
+            dpg.set_value("dialogue_studio_title", "Dialogue Studio")
+            dpg.set_value("dialogue_studio_validation", "Select an NPC, then choose Edit Conversation.")
+            return
+        dpg.set_value("dialogue_studio_title", f"Dialogue Studio - {npc.name}")
+        issues = validate_dialogue_graph(npc)
+        dpg.set_value(
+            "dialogue_studio_validation",
+            "No conversation issues."
+            if not issues
+            else "\n".join(f"{issue.code}: {issue.message}" for issue in issues),
+        )
+        if not npc.dialogue_nodes:
+            dpg.add_text(
+                "No conversation cards yet. Add a card to start the NPC conversation.",
+                parent="dialogue_storyboard",
+                wrap=760,
+            )
+            return
+        options = target_options(npc, simple=self.simple_mode)
+        for card_index, node in enumerate(npc.dialogue_nodes, start=1):
+            with dpg.child_window(
+                parent="dialogue_storyboard",
+                tag=f"studio_card_{node.id}",
+                height=265 if self.simple_mode else 335,
+                border=True,
+            ):
+                dpg.add_text(f"Card {card_index}" if self.simple_mode else f"Card {card_index} ({node.id})")
+                with dpg.group(horizontal=True):
+                    dpg.add_button(
+                        label="Focus",
+                        callback=lambda _s=None, _a=None, item=node.id: self._select_dialogue_card(dpg, item),
+                    )
+                    dpg.add_button(
+                        label="Duplicate",
+                        callback=lambda _s=None, _a=None, item=node.id: self._studio_duplicate_dialogue_node(
+                            dpg,
+                            item,
+                        ),
+                    )
+                    dpg.add_button(
+                        label="Delete",
+                        callback=lambda _s=None, _a=None, item=node.id: self._studio_delete_dialogue_node(
+                            dpg,
+                            item,
+                        ),
+                    )
+                if not self.simple_mode:
+                    dpg.add_input_text(
+                        tag=f"studio_node_id_{node.id}",
+                        label="Node ID",
+                        default_value=node.id,
+                        width=-1,
+                    )
+                dpg.add_input_text(
+                    tag=f"studio_speaker_{node.id}",
+                    label="Speaker",
+                    default_value=node.speaker,
+                    width=-1,
+                )
+                dpg.add_input_text(
+                    tag=f"studio_text_{node.id}",
+                    label="Line",
+                    default_value=node.text,
+                    multiline=True,
+                    height=58,
+                    width=-1,
+                )
+                dpg.add_button(
+                    label="Apply Card",
+                    callback=lambda _s=None, _a=None, item=node.id: self._studio_apply_dialogue_node(
+                        dpg,
+                        item,
+                    ),
+                )
+                dpg.add_text("Response buttons")
+                for choice_index, choice in enumerate(node.choices):
+                    self._build_dialogue_choice_row(dpg, npc, node.id, choice_index, choice, options)
+                dpg.add_button(
+                    label="Add Response",
+                    callback=lambda _s=None, _a=None, item=node.id: self._studio_add_dialogue_choice(
+                        dpg,
+                        item,
+                    ),
+                )
+        self._draw_dialogue_graph(dpg, npc)
+
+    def _build_dialogue_choice_row(self, dpg, npc, node_id: str, choice_index: int, choice, options: list[str]) -> None:
+        with dpg.group(horizontal=True):
+            dpg.add_input_text(
+                tag=f"studio_choice_text_{node_id}_{choice_index}",
+                default_value=choice.text,
+                hint="response text",
+                width=220,
+            )
+            dpg.add_combo(
+                tag=f"studio_choice_target_{node_id}_{choice_index}",
+                items=options,
+                default_value=target_label(npc, choice.target, simple=self.simple_mode),
+                width=250,
+            )
+            dpg.add_button(
+                label="Apply",
+                callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                    self._studio_apply_dialogue_choice(dpg, item, index)
+                ),
+            )
+            dpg.add_button(
+                label="New Target",
+                callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                    self._studio_create_choice_target(dpg, item, index)
+                ),
+            )
+            dpg.add_button(
+                label="Copy",
+                callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                    self._studio_duplicate_dialogue_choice(dpg, item, index)
+                ),
+            )
+            dpg.add_button(
+                label="Delete",
+                callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                    self._studio_delete_dialogue_choice(dpg, item, index)
+                ),
+            )
+        dpg.add_text(choice_summary(choice, npc, simple=self.simple_mode), wrap=760)
+        if not self.simple_mode:
+            self._build_dialogue_choice_advanced(dpg, node_id, choice_index, choice)
+
+    def _build_dialogue_choice_advanced(self, dpg, node_id: str, choice_index: int, choice) -> None:
+        prefix = f"studio_choice_condition_{node_id}_{choice_index}"
+        scene = self.controller.current_scene
+        project = self.controller.project
+        item_ids = [item.id for item in project.items] if project is not None else []
+        object_ids = []
+        if scene is not None:
+            object_ids = [
+                *(item.id for item in scene.hotspots),
+                *(item.id for item in scene.exits),
+                *(item.id for item in scene.npcs),
+                *(item.id for item in scene.items),
+                *(item.id for item in scene.spawns),
+            ]
+        with dpg.tree_node(label="Advanced: condition and effects", default_open=False):
+            dpg.add_text(f"Condition: {condition_label(choice.condition)}", wrap=720)
+            dpg.add_combo(
+                tag=f"{prefix}_type",
+                label="Condition",
+                items=CONDITION_TYPES,
+                default_value=choice.condition.type if choice.condition is not None else "always",
+                width=-1,
+            )
+            dpg.add_input_text(
+                tag=f"{prefix}_variable",
+                label="Variable",
+                default_value="" if choice.condition is None else choice.condition.variable or "",
+                width=-1,
+            )
+            dpg.add_combo(
+                tag=f"{prefix}_operator",
+                label="Operator",
+                items=CONDITION_OPERATORS,
+                default_value="==" if choice.condition is None else choice.condition.operator,
+                width=-1,
+            )
+            dpg.add_input_text(
+                tag=f"{prefix}_value",
+                label="Value",
+                default_value="true" if choice.condition is None else str(choice.condition.value),
+                width=-1,
+            )
+            dpg.add_combo(tag=f"{prefix}_item", label="Item", items=item_ids, width=-1)
+            dpg.add_combo(tag=f"{prefix}_object", label="Object", items=object_ids, width=-1)
+            dpg.add_combo(
+                tag=f"{prefix}_not_type",
+                label="Not Condition",
+                items=CONDITION_TYPES[:-1],
+                default_value="always",
+                width=-1,
+            )
+            self._set_condition_fields(dpg, prefix, choice.condition)
+            dpg.add_button(
+                label="Apply Condition",
+                callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                    self._studio_apply_choice_condition(dpg, item, index)
+                ),
+            )
+            dpg.add_separator()
+            dpg.add_text(f"Effects: {effects_label(choice.actions)}", wrap=720)
+            for effect_index, action in enumerate(choice.actions):
+                self._build_dialogue_choice_effect_editor(
+                    dpg,
+                    node_id,
+                    choice_index,
+                    effect_index,
+                    action,
+                    item_ids,
+                    object_ids,
+                )
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Add Say Effect",
+                    callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                        self._studio_add_choice_effect(dpg, item, index)
+                    ),
+                )
+                dpg.add_button(
+                    label="Remove Last Effect",
+                    callback=lambda _s=None, _a=None, item=node_id, index=choice_index: (
+                        self._studio_remove_choice_effect(dpg, item, index)
+                    ),
+                )
+
+    def _build_dialogue_choice_effect_editor(
+        self,
+        dpg,
+        node_id: str,
+        choice_index: int,
+        effect_index: int,
+        action: Action,
+        item_ids: list[str],
+        object_ids: list[str],
+    ) -> None:
+        scene_ids = list(self.controller.scenes.keys())
+        npc = self._studio_npc()
+        node_ids = [node.id for node in npc.dialogue_nodes] if npc is not None else []
+        prefix = f"studio_choice_effect_{node_id}_{choice_index}_{effect_index}"
+        with dpg.tree_node(label=f"Effect {effect_index + 1}: {action_label(action)}", default_open=False):
+            dpg.add_combo(
+                tag=f"{prefix}_type",
+                label="Effect Type",
+                items=ACTION_TYPES,
+                default_value=action.type,
+                width=-1,
+            )
+            dpg.add_input_text(
+                tag=f"{prefix}_speaker",
+                label="Speaker",
+                default_value=action.speaker or "",
+                width=-1,
+            )
+            dpg.add_input_text(
+                tag=f"{prefix}_text",
+                label="Text",
+                default_value=action.text or "",
+                width=-1,
+            )
+            dpg.add_combo(tag=f"{prefix}_npc", label="NPC", items=[self.canvas.selected_id or ""], default_value=action.npc or "", width=-1)
+            dpg.add_combo(tag=f"{prefix}_node", label="Dialogue Card", items=node_ids, default_value=action.node or "", width=-1)
+            dpg.add_combo(tag=f"{prefix}_scene", label="Scene", items=scene_ids, default_value=action.scene or "", width=-1)
+            dpg.add_combo(tag=f"{prefix}_spawn", label="Spawn", items=[], default_value=action.spawn or "", width=-1)
+            dpg.add_combo(tag=f"{prefix}_item", label="Item", items=item_ids, default_value=action.item or "", width=-1)
+            dpg.add_combo(tag=f"{prefix}_object", label="Object", items=object_ids, default_value=action.object_id or "", width=-1)
+            dpg.add_input_text(
+                tag=f"{prefix}_variable",
+                label="Variable",
+                default_value=action.variable or "",
+                width=-1,
+            )
+            dpg.add_input_text(
+                tag=f"{prefix}_value",
+                label="Value",
+                default_value="" if action.value is None else str(action.value),
+                width=-1,
+            )
+            dpg.add_checkbox(tag=f"{prefix}_enabled", label="Enabled", default_value=bool(action.enabled))
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Apply Effect",
+                    callback=lambda _s=None, _a=None, item=node_id, index=choice_index, effect=effect_index: (
+                        self._studio_apply_choice_effect(dpg, item, index, effect)
+                    ),
+                )
+                dpg.add_button(
+                    label="Remove Effect",
+                    callback=lambda _s=None, _a=None, item=node_id, index=choice_index, effect=effect_index: (
+                        self._studio_remove_choice_effect_at(dpg, item, index, effect)
+                    ),
+                )
+
+    def _draw_dialogue_graph(self, dpg, npc) -> None:
+        width = 760
+        node_width = 150
+        y = 40
+        positions = {}
+        for index, node in enumerate(npc.dialogue_nodes):
+            x = 20 + (index % 4) * 185
+            y = 30 + (index // 4) * 70
+            positions[node.id] = (x, y)
+            dpg.draw_rectangle((x, y), (x + node_width, y + 42), color=(110, 140, 170), parent="dialogue_graph_overview")
+            dpg.draw_text(
+                (x + 8, y + 12),
+                f"{index + 1}. {node.speaker}",
+                size=14,
+                parent="dialogue_graph_overview",
+            )
+        for node in npc.dialogue_nodes:
+            start = positions.get(node.id)
+            if start is None:
+                continue
+            for choice in node.choices:
+                if choice.target not in positions:
+                    continue
+                end = positions[choice.target]
+                dpg.draw_line(
+                    (start[0] + node_width, start[1] + 21),
+                    (end[0], end[1] + 21),
+                    color=(220, 180, 90),
+                    thickness=2,
+                    parent="dialogue_graph_overview",
+                )
+        dpg.configure_item("dialogue_graph_overview", width=width, height=max(180, y + 90))
 
     def _refresh_objects(self, dpg) -> None:
         scene = self.controller.current_scene
@@ -1395,12 +1971,17 @@ class EditorApp:
         kind = self.canvas.selected_kind
         item = self._selected_item()
         has_item = item is not None
-        field_visibility = inspector_field_visibility(kind, has_item)
+        field_visibility = inspector_field_visibility(
+            kind,
+            has_item,
+            workspace=self.active_workspace,
+            advanced=not self.simple_mode,
+        )
         for tag, visible in field_visibility.items():
             dpg.configure_item(tag, show=visible)
-        label = "Inspector"
+        label = f"{self.active_workspace} Inspector"
         if kind and self.canvas.selected_id:
-            label = f"Inspector - {kind}:{self.canvas.selected_id}"
+            label = f"{self.active_workspace} - {kind}:{self.canvas.selected_id}"
         dpg.set_value("inspector_title", label)
         self._refresh_action_editor(dpg)
         if dpg.does_item_exist("dialogue_choice_condition_type"):
@@ -1497,7 +2078,8 @@ class EditorApp:
 
     def _refresh_action_editor(self, dpg) -> None:
         action_type = dpg.get_value("action_type") or "say"
-        visible = self.canvas.selected_kind in {"hotspot", "npc", "item"}
+        visible = self.active_workspace == "Logic" and self.canvas.selected_kind in {"hotspot", "npc", "item"}
+        advanced = not self.simple_mode
         dpg.configure_item("action_speaker", show=visible and action_type == "say")
         dpg.configure_item("action_text", show=visible and action_type == "say")
         dpg.configure_item("action_npc", show=visible and action_type == "dialogue")
@@ -1509,38 +2091,43 @@ class EditorApp:
         dpg.configure_item("action_variable", show=visible and action_type == "set_variable")
         dpg.configure_item("action_value", show=visible and action_type == "set_variable")
         dpg.configure_item("action_enabled", show=visible and action_type == "set_object_enabled")
-        dpg.configure_item("action_condition_header", show=visible and action_type == "conditional")
-        dpg.configure_item("action_condition_type", show=visible and action_type == "conditional")
+        dpg.configure_item("action_condition_header", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_condition_type", show=visible and advanced and action_type == "conditional")
         condition_type = dpg.get_value("action_condition_type") or "always"
-        dpg.configure_item("action_condition_variable", show=visible and action_type == "conditional" and condition_type == "variable")
-        dpg.configure_item("action_condition_operator", show=visible and action_type == "conditional" and condition_type == "variable")
-        dpg.configure_item("action_condition_value", show=visible and action_type == "conditional" and condition_type == "variable")
-        dpg.configure_item("action_condition_item", show=visible and action_type == "conditional" and condition_type == "has_item")
-        dpg.configure_item("action_condition_object", show=visible and action_type == "conditional" and condition_type == "object_enabled")
-        dpg.configure_item("action_condition_not_type", show=visible and action_type == "conditional" and condition_type == "not")
+        dpg.configure_item("action_condition_variable", show=visible and advanced and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_operator", show=visible and advanced and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_value", show=visible and advanced and action_type == "conditional" and condition_type == "variable")
+        dpg.configure_item("action_condition_item", show=visible and advanced and action_type == "conditional" and condition_type == "has_item")
+        dpg.configure_item("action_condition_object", show=visible and advanced and action_type == "conditional" and condition_type == "object_enabled")
+        dpg.configure_item("action_condition_not_type", show=visible and advanced and action_type == "conditional" and condition_type == "not")
         dpg.configure_item("action_actions_header", show=visible and action_type == "sequence")
         dpg.configure_item("action_actions_list", show=visible and action_type == "sequence")
         dpg.configure_item("action_actions_buttons", show=visible and action_type == "sequence")
-        dpg.configure_item("action_if_actions_header", show=visible and action_type == "conditional")
-        dpg.configure_item("action_if_actions_list", show=visible and action_type == "conditional")
-        dpg.configure_item("action_if_actions_buttons", show=visible and action_type == "conditional")
-        dpg.configure_item("action_else_actions_header", show=visible and action_type == "conditional")
-        dpg.configure_item("action_else_actions_list", show=visible and action_type == "conditional")
-        dpg.configure_item("action_else_actions_buttons", show=visible and action_type == "conditional")
-        dpg.configure_item("action_condition_json", show=False)
-        dpg.configure_item("action_actions_json", show=False)
-        dpg.configure_item("action_if_actions_json", show=False)
-        dpg.configure_item("action_else_actions_json", show=False)
+        dpg.configure_item("action_if_actions_header", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_if_actions_list", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_if_actions_buttons", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_else_actions_header", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_else_actions_list", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_else_actions_buttons", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_condition_json", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_actions_json", show=visible and advanced and action_type == "sequence")
+        dpg.configure_item("action_if_actions_json", show=visible and advanced and action_type == "conditional")
+        dpg.configure_item("action_else_actions_json", show=visible and advanced and action_type == "conditional")
 
     def _refresh_dialogue_choice_condition_editor(self, dpg) -> None:
-        visible = self.canvas.selected_kind == "npc"
+        visible = False
+        advanced = not self.simple_mode
         condition_type = dpg.get_value("dialogue_choice_condition_type") or "always"
-        dpg.configure_item("dialogue_choice_condition_variable", show=visible and condition_type == "variable")
-        dpg.configure_item("dialogue_choice_condition_operator", show=visible and condition_type == "variable")
-        dpg.configure_item("dialogue_choice_condition_value", show=visible and condition_type == "variable")
-        dpg.configure_item("dialogue_choice_condition_item", show=visible and condition_type == "has_item")
-        dpg.configure_item("dialogue_choice_condition_object", show=visible and condition_type == "object_enabled")
-        dpg.configure_item("dialogue_choice_condition_not_type", show=visible and condition_type == "not")
+        dpg.configure_item("dialogue_choice_condition_header", show=visible and advanced)
+        dpg.configure_item("dialogue_choice_condition_type", show=visible and advanced)
+        dpg.configure_item("dialogue_choice_condition_variable", show=visible and advanced and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_operator", show=visible and advanced and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_value", show=visible and advanced and condition_type == "variable")
+        dpg.configure_item("dialogue_choice_condition_item", show=visible and advanced and condition_type == "has_item")
+        dpg.configure_item("dialogue_choice_condition_object", show=visible and advanced and condition_type == "object_enabled")
+        dpg.configure_item("dialogue_choice_condition_not_type", show=visible and advanced and condition_type == "not")
+        dpg.configure_item("dialogue_choice_condition_json", show=visible and advanced)
+        dpg.configure_item("dialogue_choice_actions_json", show=visible and advanced)
 
     def _refresh_dialogue_list(self, dpg) -> None:
         item = self._selected_item()

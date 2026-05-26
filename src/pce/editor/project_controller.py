@@ -29,6 +29,7 @@ from pce.shared.validation import ValidationIssue, validate_project
 
 
 ProjectSnapshot = tuple[ProjectConfig, dict[str, SceneConfig], str | None]
+_UNSET = object()
 
 
 class ProjectController:
@@ -214,6 +215,15 @@ class ProjectController:
         npc.dialogue_nodes.append(node)
         return node
 
+    def duplicate_dialogue_node(self, npc_id: str, node_id: str) -> str:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        self.record_undo()
+        duplicate = copy.deepcopy(node)
+        duplicate.id = self._unique_dialogue_node_id(npc, f"{node.id}_copy")
+        npc.dialogue_nodes.append(duplicate)
+        return duplicate.id
+
     def add_dialogue_choice(self, npc_id: str, node_id: str) -> DialogueChoice:
         npc = self._require_npc(npc_id)
         node = self._require_dialogue_node(npc, node_id)
@@ -221,6 +231,53 @@ class ProjectController:
         choice = DialogueChoice(text="Continue.")
         node.choices.append(choice)
         return choice
+
+    def update_dialogue_choice(
+        self,
+        npc_id: str,
+        node_id: str,
+        choice_index: int,
+        *,
+        text: str | None = None,
+        target: str | None = None,
+        condition: Condition | None | object = _UNSET,
+        actions: list[Action] | None = None,
+    ) -> None:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        if choice_index < 0 or choice_index >= len(node.choices):
+            raise IndexError(f"Unknown dialogue choice index: {choice_index}")
+        choice = copy.deepcopy(node.choices[choice_index])
+        if text is not None:
+            choice.text = text
+        if target is not None:
+            choice.target = target or None
+        if condition is not _UNSET:
+            choice.condition = condition
+        if actions is not None:
+            choice.actions = actions
+        if choice == node.choices[choice_index]:
+            return
+        self.record_undo()
+        node.choices[choice_index] = choice
+
+    def duplicate_dialogue_choice(self, npc_id: str, node_id: str, choice_index: int) -> int:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        if choice_index < 0 or choice_index >= len(node.choices):
+            raise IndexError(f"Unknown dialogue choice index: {choice_index}")
+        self.record_undo()
+        node.choices.insert(choice_index + 1, copy.deepcopy(node.choices[choice_index]))
+        return choice_index + 1
+
+    def delete_dialogue_choice(self, npc_id: str, node_id: str, choice_index: int) -> bool:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        if choice_index < 0 or choice_index >= len(node.choices):
+            return False
+        self.record_undo()
+        del node.choices[choice_index]
+        return True
 
     def delete_dialogue_node(self, npc_id: str, node_id: str) -> bool:
         npc = self._require_npc(npc_id)

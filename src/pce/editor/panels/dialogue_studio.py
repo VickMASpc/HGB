@@ -51,6 +51,22 @@ def target_id_from_label(npc: NPC, label: str) -> str | None:
     return None
 
 
+def next_node_id(npc: NPC, node_id: str) -> str | None:
+    for index, node in enumerate(npc.dialogue_nodes):
+        if node.id == node_id and index + 1 < len(npc.dialogue_nodes):
+            return npc.dialogue_nodes[index + 1].id
+    return None
+
+
+def destination_label(npc: NPC, node_id: str, choice: DialogueChoice) -> str:
+    next_id = next_node_id(npc, node_id)
+    if choice.target is None:
+        return "End conversation"
+    if next_id is not None and choice.target == next_id:
+        return "Continue"
+    return "New branch"
+
+
 def condition_label(condition: Condition | None) -> str:
     if condition is None or condition.type == "always":
         return "Always available"
@@ -65,10 +81,44 @@ def condition_label(condition: Condition | None) -> str:
     return condition.type
 
 
+def condition_chip_label(condition: Condition | None) -> str | None:
+    if condition is None or condition.type == "always":
+        return None
+    if condition.type == "has_item":
+        return f"Requires: {condition.item or 'item'}"
+    if condition.type == "variable":
+        return f"Requires: {condition.variable or 'variable'}"
+    if condition.type == "object_enabled":
+        return f"Requires: {condition.object_id or 'object'}"
+    if condition.type == "not":
+        nested = condition_chip_label(condition.condition)
+        return f"Requires not: {nested.removeprefix('Requires: ') if nested else 'condition'}"
+    return f"Requires: {condition.type}"
+
+
 def effects_label(actions: list[Action]) -> str:
     if not actions:
         return "No effects"
     return ", ".join(action_label(action) for action in actions)
+
+
+def effect_chip_labels(actions: list[Action]) -> list[str]:
+    chips: list[str] = []
+    for action in actions:
+        if action.type == "give_item":
+            chips.append(f"Gives: {action.item or 'item'}")
+        elif action.type == "remove_item":
+            chips.append(f"Takes: {action.item or 'item'}")
+        elif action.type == "set_variable":
+            chips.append(f"Sets: {action.variable or 'variable'}")
+        elif action.type == "set_object_enabled":
+            state = "Enables" if action.enabled else "Disables"
+            chips.append(f"{state}: {action.object_id or 'object'}")
+        elif action.type == "say":
+            chips.append(f"Says: {(action.text or '').strip() or 'line'}")
+        else:
+            chips.append(action_label(action))
+    return chips
 
 
 def choice_summary(choice: DialogueChoice, npc: NPC, *, simple: bool = True) -> str:

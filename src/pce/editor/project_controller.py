@@ -215,6 +215,26 @@ class ProjectController:
         npc.dialogue_nodes.append(node)
         return node
 
+    def insert_dialogue_node_after(self, npc_id: str, node_id: str) -> DialogueNode:
+        npc = self._require_npc(npc_id)
+        index = next((idx for idx, node in enumerate(npc.dialogue_nodes) if node.id == node_id), None)
+        if index is None:
+            raise ValueError(f"Unknown dialogue node: {node_id}")
+        self.record_undo()
+        number = len(npc.dialogue_nodes) + 1
+        node = DialogueNode(
+            id=self._unique_dialogue_node_id(npc, f"node_{number}"),
+            speaker=npc.name,
+            text="New line.",
+        )
+        next_id = npc.dialogue_nodes[index + 1].id if index + 1 < len(npc.dialogue_nodes) else None
+        npc.dialogue_nodes.insert(index + 1, node)
+        if next_id is not None:
+            for choice in npc.dialogue_nodes[index].choices:
+                if choice.target == next_id:
+                    choice.target = node.id
+        return node
+
     def duplicate_dialogue_node(self, npc_id: str, node_id: str) -> str:
         npc = self._require_npc(npc_id)
         node = self._require_dialogue_node(npc, node_id)
@@ -270,6 +290,19 @@ class ProjectController:
         node.choices.insert(choice_index + 1, copy.deepcopy(node.choices[choice_index]))
         return choice_index + 1
 
+    def move_dialogue_choice(self, npc_id: str, node_id: str, choice_index: int, offset: int) -> int:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        if choice_index < 0 or choice_index >= len(node.choices):
+            raise IndexError(f"Unknown dialogue choice index: {choice_index}")
+        new_index = max(0, min(len(node.choices) - 1, choice_index + offset))
+        if new_index == choice_index:
+            return choice_index
+        self.record_undo()
+        choice = node.choices.pop(choice_index)
+        node.choices.insert(new_index, choice)
+        return new_index
+
     def delete_dialogue_choice(self, npc_id: str, node_id: str, choice_index: int) -> bool:
         npc = self._require_npc(npc_id)
         node = self._require_dialogue_node(npc, node_id)
@@ -284,11 +317,13 @@ class ProjectController:
         for index, node in enumerate(npc.dialogue_nodes):
             if node.id == node_id:
                 self.record_undo()
+                next_id = npc.dialogue_nodes[index + 1].id if index + 1 < len(npc.dialogue_nodes) else None
+                previous_node = npc.dialogue_nodes[index - 1] if index > 0 else None
                 del npc.dialogue_nodes[index]
                 for other in npc.dialogue_nodes:
                     for choice in other.choices:
                         if choice.target == node_id:
-                            choice.target = None
+                            choice.target = next_id if previous_node is not None and other.id == previous_node.id else None
                 for action in npc.on_click:
                     if action.node == node_id:
                         action.node = npc.dialogue_nodes[0].id if npc.dialogue_nodes else None
@@ -359,6 +394,44 @@ class ProjectController:
                 item.on_click = actions
                 return
         raise ValueError(f"Unknown action target: {kind}:{object_id}")
+
+    def ensure_action(
+        self,
+        kind: str,
+        object_id: str,
+        *,
+        default: Action | None = None,
+    ) -> int:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        if item.on_click:
+            return 0
+        self.record_undo()
+        item.on_click = [copy.deepcopy(default or Action(type="say", speaker="Player", text=""))]
+        return 0
+
+    def update_action(
+        self,
+        kind: str,
+        object_id: str,
+        action_index: int,
+        action: Action,
+    ) -> None:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        if action_index < 0 or action_index >= len(item.on_click):
+            raise IndexError(f"Unknown action index: {action_index}")
+        edited = copy.deepcopy(action)
+        if item.on_click[action_index] == edited:
+            return
+        self.record_undo()
+        actions = list(item.on_click)
+        actions[action_index] = edited
+        item.on_click = actions
 
     def update_scene_metadata(
         self,

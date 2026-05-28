@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 
-WORKSPACES = ("Scenes", "Dialogue", "Logic", "Assets")
-
-
 ACTION_FIELD_TAGS = {
     "actions_header",
     "action_list",
@@ -41,10 +38,19 @@ ACTION_FIELD_TAGS = {
     "action_actions_json",
     "action_if_actions_json",
     "action_else_actions_json",
+    "apply_action_button",
 }
 
 DIALOGUE_FIELD_TAGS = {
     "dialogue_header",
+    "dialogue_composer",
+    "dialogue_composer_toolbar",
+    "dialogue_composer_add_line",
+    "dialogue_composer_preview",
+    "dialogue_composer_validation",
+    "dialogue_composer_panel",
+    "dialogue_composer_graph_header",
+    "dialogue_graph_overview",
     "dialogue_node_list",
     "dialogue_buttons",
     "dialogue_node_id",
@@ -71,6 +77,8 @@ DIALOGUE_FIELD_TAGS = {
     "dialogue_choice_action_buttons",
     "dialogue_choice_condition_json",
     "dialogue_choice_actions_json",
+    "apply_dialogue_node_button",
+    "apply_choice_button",
 }
 
 ADVANCED_FIELD_TAGS = {
@@ -88,6 +96,15 @@ ADVANCED_FIELD_TAGS = {
     "action_actions_json",
     "action_if_actions_json",
     "action_else_actions_json",
+    "action_actions_header",
+    "action_actions_list",
+    "action_actions_buttons",
+    "action_if_actions_header",
+    "action_if_actions_list",
+    "action_if_actions_buttons",
+    "action_else_actions_header",
+    "action_else_actions_list",
+    "action_else_actions_buttons",
     "dialogue_node_id",
     "dialogue_node_actions_header",
     "dialogue_node_action_list",
@@ -106,30 +123,20 @@ ADVANCED_FIELD_TAGS = {
     "dialogue_choice_action_buttons",
     "dialogue_choice_condition_json",
     "dialogue_choice_actions_json",
+    "apply_properties_button",
+    "apply_action_button",
+    "apply_dialogue_node_button",
+    "apply_choice_button",
 }
 
-SCENE_PROPERTY_FIELD_TAGS = {
-    "prop_id",
-    "prop_name",
-    "prop_rect",
-    "prop_pos",
-    "prop_background",
-    "background_button",
-    "prop_sprite",
-    "npc_sprite_button",
-    "player_sprite_button",
-    "prop_item_id",
-    "prop_enabled",
-    "prop_layer",
-    "prop_facing",
-    "prop_target_scene",
-    "prop_target_spawn",
-    "prop_walk_path",
-    "prop_lines",
-    "duplicate_button",
-    "delete_button",
-    "edit_interaction_button",
-    "edit_conversation_button",
+STRUCTURE_TAGS = {
+    "context_empty_state",
+    "context_scene_tools",
+    "context_primary_properties_header",
+    "context_primary_properties",
+    "context_interactions_header",
+    "context_dialogue_header",
+    "expert_drawer",
 }
 
 
@@ -137,21 +144,30 @@ def inspector_field_visibility(
     kind: str | None,
     has_item: bool,
     *,
-    workspace: str = "Scenes",
+    workspace: str = "Studio",
     advanced: bool = False,
 ) -> dict[str, bool]:
+    del workspace
     action_owner = kind in {"hotspot", "npc", "item"}
     dialogue_owner = kind == "npc"
+    scene_selected = kind == "scene"
     visibility = {
+        "context_empty_state": not has_item,
+        "context_scene_tools": scene_selected,
+        "context_primary_properties_header": has_item,
+        "context_primary_properties": has_item,
+        "context_interactions_header": action_owner,
+        "context_dialogue_header": dialogue_owner,
+        "expert_drawer": has_item and advanced,
         "prop_id": has_item,
         "prop_name": has_item and kind in {"scene", "hotspot", "exit", "npc"},
         "prop_rect": kind in {"hotspot", "exit", "item"},
         "prop_pos": kind in {"npc", "spawn"},
-        "prop_background": kind == "scene",
-        "background_button": kind == "scene",
+        "prop_background": scene_selected,
+        "background_button": scene_selected,
         "prop_sprite": kind == "npc",
         "npc_sprite_button": kind == "npc",
-        "player_sprite_button": kind == "scene",
+        "player_sprite_button": scene_selected,
         "prop_item_id": kind == "item",
         "prop_enabled": kind in {"hotspot", "item"},
         "prop_layer": kind in {"hotspot", "exit", "item"},
@@ -160,8 +176,8 @@ def inspector_field_visibility(
         "prop_target_spawn": kind == "exit",
         "prop_walk_path": kind == "exit",
         "prop_lines": kind == "npc",
-        "duplicate_button": kind is not None,
-        "delete_button": kind is not None,
+        "duplicate_button": has_item and not scene_selected,
+        "delete_button": has_item and not scene_selected,
         "actions_header": action_owner,
         "action_list": action_owner,
         "action_buttons": action_owner,
@@ -198,51 +214,48 @@ def inspector_field_visibility(
         "action_actions_json": False,
         "action_if_actions_json": False,
         "action_else_actions_json": False,
-        "dialogue_header": kind == "npc",
-        "dialogue_node_list": kind == "npc",
-        "dialogue_buttons": kind == "npc",
-        "dialogue_node_id": kind == "npc",
-        "dialogue_speaker": kind == "npc",
-        "dialogue_text": kind == "npc",
-        "dialogue_node_actions_header": kind == "npc",
-        "dialogue_node_action_list": kind == "npc",
-        "dialogue_node_action_buttons": kind == "npc",
+        "apply_action_button": action_owner and advanced,
+        "dialogue_header": dialogue_owner,
+        "dialogue_composer": dialogue_owner,
+        "dialogue_composer_toolbar": dialogue_owner,
+        "dialogue_composer_add_line": dialogue_owner,
+        "dialogue_composer_preview": dialogue_owner,
+        "dialogue_composer_validation": dialogue_owner,
+        "dialogue_composer_panel": dialogue_owner,
+        "dialogue_composer_graph_header": dialogue_owner,
+        "dialogue_graph_overview": dialogue_owner,
+        "dialogue_node_list": dialogue_owner and advanced,
+        "dialogue_buttons": dialogue_owner and advanced,
+        "dialogue_node_id": dialogue_owner and advanced,
+        "dialogue_speaker": dialogue_owner and advanced,
+        "dialogue_text": dialogue_owner and advanced,
+        "dialogue_node_actions_header": dialogue_owner and advanced,
+        "dialogue_node_action_list": dialogue_owner and advanced,
+        "dialogue_node_action_buttons": dialogue_owner and advanced,
         "dialogue_node_actions_json": False,
-        "dialogue_choice_list": kind == "npc",
-        "dialogue_choice_buttons": kind == "npc",
-        "dialogue_choice_text": kind == "npc",
-        "dialogue_choice_target": kind == "npc",
-        "dialogue_choice_condition_header": kind == "npc",
-        "dialogue_choice_condition_type": kind == "npc",
-        "dialogue_choice_condition_variable": kind == "npc",
-        "dialogue_choice_condition_operator": kind == "npc",
-        "dialogue_choice_condition_value": kind == "npc",
-        "dialogue_choice_condition_item": kind == "npc",
-        "dialogue_choice_condition_object": kind == "npc",
-        "dialogue_choice_condition_not_type": kind == "npc",
-        "dialogue_choice_actions_header": kind == "npc",
-        "dialogue_choice_action_list": kind == "npc",
-        "dialogue_choice_action_buttons": kind == "npc",
+        "dialogue_choice_list": dialogue_owner and advanced,
+        "dialogue_choice_buttons": dialogue_owner and advanced,
+        "dialogue_choice_text": dialogue_owner and advanced,
+        "dialogue_choice_target": dialogue_owner and advanced,
+        "dialogue_choice_condition_header": dialogue_owner and advanced,
+        "dialogue_choice_condition_type": dialogue_owner and advanced,
+        "dialogue_choice_condition_variable": dialogue_owner and advanced,
+        "dialogue_choice_condition_operator": dialogue_owner and advanced,
+        "dialogue_choice_condition_value": dialogue_owner and advanced,
+        "dialogue_choice_condition_item": dialogue_owner and advanced,
+        "dialogue_choice_condition_object": dialogue_owner and advanced,
+        "dialogue_choice_condition_not_type": dialogue_owner and advanced,
+        "dialogue_choice_actions_header": dialogue_owner and advanced,
+        "dialogue_choice_action_list": dialogue_owner and advanced,
+        "dialogue_choice_action_buttons": dialogue_owner and advanced,
         "dialogue_choice_condition_json": False,
         "dialogue_choice_actions_json": False,
-        "edit_interaction_button": workspace == "Scenes" and action_owner,
-        "edit_conversation_button": workspace == "Scenes" and dialogue_owner,
+        "apply_dialogue_node_button": dialogue_owner and advanced,
+        "apply_choice_button": dialogue_owner and advanced,
+        "apply_properties_button": has_item and advanced,
+        "edit_interaction_button": False,
+        "edit_conversation_button": False,
     }
-
-    if workspace == "Scenes":
-        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS:
-            visibility[tag] = False
-    elif workspace == "Dialogue":
-        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS:
-            visibility[tag] = False
-    elif workspace == "Logic":
-        for tag in DIALOGUE_FIELD_TAGS:
-            visibility[tag] = False
-        for tag in ACTION_FIELD_TAGS:
-            visibility[tag] = action_owner
-    elif workspace == "Assets":
-        for tag in ACTION_FIELD_TAGS | DIALOGUE_FIELD_TAGS | SCENE_PROPERTY_FIELD_TAGS:
-            visibility[tag] = False
 
     if not advanced:
         for tag in ADVANCED_FIELD_TAGS:

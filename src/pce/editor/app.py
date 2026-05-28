@@ -41,6 +41,18 @@ from pce.editor.panels.dialogue_studio import (
     validate_dialogue_graph,
 )
 from pce.editor.panels.properties_panel import inspector_field_visibility
+from pce.editor.panels.reaction_recipes import (
+    RECIPE_TEMPLATES,
+    default_action_for_recipe,
+    exit_validation_warnings,
+    numbered_recipe_labels,
+    recipe_label,
+    recipe_validation_warnings,
+    scene_card_label,
+    scene_card_labels,
+    scene_id_from_card_label,
+    story_map_lines,
+)
 from pce.editor.panels.adventure_shell import (
     build_adventure_toolbar,
     build_canvas_toolbar,
@@ -438,6 +450,19 @@ class EditorApp:
         self.status = "Current scene is now the start scene."
         self._refresh(dpg)
 
+    def _select_story_map_link(self, dpg, value: str) -> None:
+        if " -> " not in value:
+            return
+        source_name = value.split(" -> ", 1)[0]
+        for scene_id, scene in self.controller.scenes.items():
+            if scene.name == source_name or scene.id == source_name:
+                self.controller.current_scene_id = scene_id
+                self.canvas.selected_kind = "scene"
+                self.canvas.selected_id = "current"
+                self.status = f"Opened scene {scene.name} from the story map."
+                self._refresh(dpg)
+                return
+
     def _import_background(self, dpg) -> None:
         self._import_asset(dpg, "background")
 
@@ -592,6 +617,45 @@ class EditorApp:
         self.status = "Applied properties."
         self._refresh(dpg)
 
+    def _apply_exit_destination(self, dpg) -> None:
+        if self.canvas.selected_kind != "exit" or self.canvas.selected_id is None:
+            return
+        scene_id = scene_id_from_card_label(dpg.get_value("prop_target_scene_card"), self.controller.scenes)
+        target_scene = self.controller.scenes.get(scene_id)
+        spawn_id = dpg.get_value("prop_target_spawn")
+        if target_scene is not None:
+            spawn_ids = {spawn.id for spawn in target_scene.spawns}
+            if spawn_id not in spawn_ids and target_scene.spawns:
+                spawn_id = target_scene.spawns[0].id
+        try:
+            self.controller.update_exit_destination(self.canvas.selected_id, scene_id, spawn_id)
+        except Exception as exc:
+            self.status = f"Update exit failed: {exc}"
+        else:
+            self.status = f"Exit now goes to {scene_id} at {spawn_id}."
+        self._refresh(dpg)
+
+    def _preview_selected_exit(self, dpg) -> None:
+        item = self._selected_item()
+        if self.canvas.selected_kind != "exit" or item is None:
+            self.status = "Select an exit to preview."
+        else:
+            self.status = (
+                f"Preview: clicking {item.name} walks the path, then sends the player "
+                f"to {item.target_scene} at {item.target_spawn}."
+            )
+        self._refresh(dpg)
+
+    def _preview_selected_interaction(self, dpg) -> None:
+        item = self._selected_item()
+        actions = list(getattr(item, "on_click", [])) if item is not None else []
+        if not actions:
+            self.status = "Add a reaction before previewing this interaction."
+        else:
+            labels = [recipe_label(action, owner_id=getattr(item, "id", None)) for action in actions]
+            self.status = "Preview: " + " -> ".join(labels)
+        self._refresh(dpg)
+
     def _select_action(self, dpg, value: str) -> None:
         try:
             self._selected_action_index = int(value.split(".", 1)[0]) - 1
@@ -603,12 +667,16 @@ class EditorApp:
         target = self._selected_action_target()
         if target is None:
             return
-        kind, object_id, actions = target
-        actions = list(actions)
-        actions.append(Action(type="say", speaker="Player", text="New line."))
-        self.controller.set_actions(kind, object_id, actions)
-        self._selected_action_index = len(actions) - 1
-        self.status = "Added action."
+        kind, object_id, _actions = target
+        recipe_name = dpg.get_value("recipe_template") or "Player says..."
+        recipe = RECIPE_TEMPLATES.get(recipe_name, "say")
+        action = default_action_for_recipe(
+            recipe,
+            owner_id=object_id,
+            current_scene=self.controller.current_scene,
+        )
+        self._selected_action_index = self.controller.add_action(kind, object_id, action)
+        self.status = f"Added recipe: {recipe_name}"
         self._refresh(dpg)
 
     def _remove_action(self, dpg) -> None:
@@ -618,11 +686,9 @@ class EditorApp:
         kind, object_id, actions = target
         if not actions:
             return
-        actions = list(actions)
-        del actions[min(self._selected_action_index, len(actions) - 1)]
-        self.controller.set_actions(kind, object_id, actions)
+        self.controller.remove_action(kind, object_id, min(self._selected_action_index, len(actions) - 1))
         self._selected_action_index = max(0, self._selected_action_index - 1)
-        self.status = "Removed action."
+        self.status = "Removed reaction."
         self._refresh(dpg)
 
     def _move_action(self, dpg, direction: int) -> None:
@@ -630,15 +696,23 @@ class EditorApp:
         if target is None:
             return
         kind, object_id, actions = target
-        actions = list(actions)
         old_index = self._selected_action_index
-        new_index = old_index + direction
-        if old_index < 0 or new_index < 0 or new_index >= len(actions):
+        if old_index < 0 or old_index >= len(actions):
             return
-        actions[old_index], actions[new_index] = actions[new_index], actions[old_index]
-        self.controller.set_actions(kind, object_id, actions)
-        self._selected_action_index = new_index
-        self.status = "Reordered action."
+        self._selected_action_index = self.controller.move_action(kind, object_id, old_index, direction)
+        self.status = "Reordered reaction."
+        self._refresh(dpg)
+
+    def _duplicate_action(self, dpg) -> None:
+        target = self._selected_action_target()
+        if target is None:
+            return
+        kind, object_id, actions = target
+        if not actions:
+            return
+        index = min(self._selected_action_index, len(actions) - 1)
+        self._selected_action_index = self.controller.duplicate_action(kind, object_id, index)
+        self.status = "Duplicated reaction."
         self._refresh(dpg)
 
     def _apply_action(self, dpg) -> None:
@@ -1312,6 +1386,7 @@ class EditorApp:
         dpg.set_value("status_text", self.status)
         self._refresh_objects(dpg)
         self._refresh_assets_panel(dpg)
+        self._refresh_story_map(dpg)
         self._refresh_inspector_visibility(dpg)
         self._refresh_dialogue_studio(dpg)
         self._draw_canvas(dpg)
@@ -1324,6 +1399,41 @@ class EditorApp:
         items = [] if project is None else [f"{item.id}: {item.name}" for item in project.items]
         if dpg.does_item_exist("asset_item_list"):
             dpg.configure_item("asset_item_list", items=items)
+
+    def _refresh_story_map(self, dpg) -> None:
+        if not dpg.does_item_exist("story_map_links"):
+            return
+        lines = story_map_lines(self.controller.scenes)
+        dpg.configure_item("story_map_links", items=lines)
+        if lines:
+            dpg.set_value("story_map_links", lines[0])
+        if not dpg.does_item_exist("story_map_drawlist"):
+            return
+        dpg.delete_item("story_map_drawlist", children_only=True)
+        scene_ids = list(self.controller.scenes.keys())
+        if not scene_ids:
+            return
+        positions: dict[str, tuple[int, int]] = {}
+        for index, scene_id in enumerate(scene_ids):
+            x = 10 + (index % 2) * 115
+            y = 15 + (index // 2) * 48
+            positions[scene_id] = (x, y)
+            scene = self.controller.scenes[scene_id]
+            color = (115, 155, 205) if scene_id == self.controller.current_scene_id else (80, 95, 115)
+            dpg.draw_rectangle((x, y), (x + 92, y + 32), color=color, parent="story_map_drawlist")
+            dpg.draw_text((x + 6, y + 9), scene.name[:13], size=12, parent="story_map_drawlist")
+        for line in story_map_lines(self.controller.scenes):
+            if " -> " not in line:
+                continue
+            source_name, rest = line.split(" -> ", 1)
+            target_name = rest.split(" via ", 1)[0]
+            source_id = next((sid for sid, scene in self.controller.scenes.items() if scene.name == source_name), None)
+            target_id = next((sid for sid, scene in self.controller.scenes.items() if scene.name == target_name), None)
+            if source_id in positions and target_id in positions:
+                sx, sy = positions[source_id]
+                tx, ty = positions[target_id]
+                dpg.draw_line((sx + 92, sy + 16), (tx, ty + 16), color=(220, 180, 90), parent="story_map_drawlist")
+        dpg.configure_item("story_map_drawlist", width=240, height=max(145, 55 + ((len(scene_ids) + 1) // 2) * 48))
 
     def _refresh_dialogue_studio(self, dpg) -> None:
         dpg.delete_item("dialogue_composer_panel", children_only=True)
@@ -1729,6 +1839,7 @@ class EditorApp:
         target_scene = (
             dpg.get_value("action_scene")
             or dpg.get_value("prop_target_scene")
+            or scene_id_from_card_label(dpg.get_value("prop_target_scene_card"), self.controller.scenes)
             or self.controller.current_scene_id
             or ""
         )
@@ -1744,7 +1855,9 @@ class EditorApp:
         dpg.configure_item("dialogue_choice_condition_not_type", items=CONDITION_TYPES[:-1])
         dpg.configure_item("prop_layer", items=layer_ids)
         dpg.configure_item("prop_target_scene", items=scene_ids)
+        dpg.configure_item("prop_target_scene_card", items=scene_card_labels(self.controller.scenes))
         dpg.configure_item("prop_target_spawn", items=spawn_ids)
+        dpg.configure_item("recipe_template", items=list(RECIPE_TEMPLATES.keys()))
         dpg.configure_item("action_item", items=item_ids)
         dpg.configure_item("action_object", items=object_ids)
         dpg.configure_item("action_condition_item", items=item_ids)
@@ -1771,10 +1884,17 @@ class EditorApp:
         dpg.set_value("prop_enabled", bool(getattr(item, "enabled", True)))
         dpg.set_value("prop_layer", getattr(item, "layer", ""))
         dpg.set_value("prop_facing", getattr(item, "facing", "right"))
-        dpg.set_value("prop_target_scene", getattr(item, "target_scene", ""))
+        target_scene_id = getattr(item, "target_scene", "")
+        dpg.set_value("prop_target_scene", target_scene_id)
+        target_scene = self.controller.scenes.get(target_scene_id)
+        dpg.set_value(
+            "prop_target_scene_card",
+            scene_card_label(target_scene) if target_scene is not None else target_scene_id,
+        )
         dpg.set_value("prop_target_spawn", getattr(item, "target_spawn", ""))
         dpg.set_value("prop_walk_path", self._format_points(getattr(item, "walk_path", [])))
         dpg.set_value("prop_lines", " | ".join(getattr(item, "lines", [])))
+        self._refresh_inline_warnings(dpg)
         actions = getattr(item, "on_click", [])
         if actions:
             action = actions[0]
@@ -1823,12 +1943,41 @@ class EditorApp:
     def _refresh_action_list(self, dpg) -> None:
         item = self._selected_item()
         actions = list(getattr(item, "on_click", [])) if item is not None else []
-        labels = [f"{index + 1}. {self._action_label(action)}" for index, action in enumerate(actions)]
+        owner_id = getattr(item, "id", None)
+        labels = numbered_recipe_labels(actions, owner_id=owner_id)
         dpg.configure_item("action_list", items=labels)
         if labels:
             self._selected_action_index = min(self._selected_action_index, len(labels) - 1)
             dpg.set_value("action_list", labels[self._selected_action_index])
             self._load_action_editor(dpg)
+        self._refresh_inline_warnings(dpg)
+
+    def _refresh_inline_warnings(self, dpg) -> None:
+        item = self._selected_item()
+        if item is None or self.canvas.selected_id is None:
+            if dpg.does_item_exist("action_warning_text"):
+                dpg.set_value("action_warning_text", "")
+            if dpg.does_item_exist("exit_warning_text"):
+                dpg.set_value("exit_warning_text", "")
+            return
+        issues = self.controller.validate()
+        if dpg.does_item_exist("exit_warning_text"):
+            exit_warnings = (
+                exit_validation_warnings(self.canvas.selected_id, issues)
+                if self.canvas.selected_kind == "exit"
+                else []
+            )
+            dpg.set_value("exit_warning_text", "\n".join(exit_warnings))
+        if not dpg.does_item_exist("action_warning_text"):
+            return
+        actions = list(getattr(item, "on_click", []))
+        warning_map = recipe_validation_warnings(self.canvas.selected_id, actions, issues)
+        messages = [
+            f"Recipe {index + 1}: {message}"
+            for index, warnings in warning_map.items()
+            for message in warnings
+        ]
+        dpg.set_value("action_warning_text", "\n".join(messages))
 
     def _load_action_editor(self, dpg) -> None:
         item = self._selected_item()
@@ -1913,6 +2062,7 @@ class EditorApp:
         action_type = dpg.get_value("action_type") or "say"
         visible = self.canvas.selected_kind in {"hotspot", "npc", "item"}
         advanced = not self.simple_mode
+        dpg.configure_item("action_type", show=visible and advanced)
         dpg.configure_item("action_speaker", show=visible and action_type == "say")
         dpg.configure_item("action_text", show=visible and action_type == "say")
         dpg.configure_item("action_npc", show=visible and action_type == "dialogue")
@@ -2031,7 +2181,7 @@ class EditorApp:
 
     @staticmethod
     def _action_label(action: Action) -> str:
-        return action_label(action)
+        return recipe_label(action)
 
     def _draw_canvas(self, dpg) -> None:
         draw_canvas(self, dpg)

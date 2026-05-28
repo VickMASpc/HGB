@@ -68,6 +68,50 @@
       "layer": "hotspots"
     }
   ],
-  "npcs": [],
+  "npcs": [
+    {
+      "id": "npc_1",
+      "name": "NPC 1",
+      "position": [
+        620,
+        390
+      ],
+      "lines": [
+        "Hello!",
+        "Let's explore."
+      ],
+      "on_click": [
+        {
+          "type": "dialogue",
+          "npc": "npc_1",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
+        }
+      ],
+      "dialogue_nodes": [
+        {
+          "id": "hello",
+          "speaker": "NPC 1",
+          "text": "Hello!",
+          "choices": [
+            {
+              "text": "Goodbye.",
+              "actions": []
+            }
+          ],
+          "actions": []
+        },
+        {
+          "id": "node_2",
+          "speaker": "NPC 1",
+          "text": "New line.",
+          "choices": [],
+          "actions": []
+        }
+      ]
+    }
+  ],
   "items": []
 }

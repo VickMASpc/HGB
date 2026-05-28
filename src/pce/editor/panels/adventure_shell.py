@@ -39,6 +39,17 @@ def build_scene_browser(dpg, app) -> None:
         dpg.add_button(label="Delete Scene", callback=lambda: app._request_delete_scene(dpg))
     dpg.add_button(label="Use As Start Scene", callback=lambda: app._set_start_scene(dpg))
     dpg.add_separator()
+    dpg.add_text("Story Map")
+    with dpg.drawlist(tag="story_map_drawlist", width=1, height=145):
+        pass
+    dpg.add_listbox(
+        tag="story_map_links",
+        items=[],
+        num_items=5,
+        width=-1,
+        callback=lambda _s, a: app._select_story_map_link(dpg, a),
+    )
+    dpg.add_separator()
     dpg.add_text("Objects On Stage")
     dpg.add_listbox(
         tag="object_combo",
@@ -133,19 +144,26 @@ def build_context_panel(dpg, app) -> None:
             callback=lambda _s=None, _a=None: app._apply_properties(dpg),
         )
         dpg.add_combo(
-            tag="prop_target_scene",
+            tag="prop_target_scene_card",
             label="Destination Scene",
             items=[],
             width=-1,
-            callback=lambda _s=None, _a=None: app._apply_properties(dpg),
+            callback=lambda _s=None, _a=None: app._apply_exit_destination(dpg),
         )
         dpg.add_combo(
             tag="prop_target_spawn",
             label="Destination Spawn",
             items=[],
             width=-1,
-            callback=lambda _s=None, _a=None: app._apply_properties(dpg),
+            callback=lambda _s=None, _a=None: app._apply_exit_destination(dpg),
         )
+        dpg.add_button(
+            label="Preview Exit",
+            tag="preview_exit_button",
+            callback=lambda: app._preview_selected_exit(dpg),
+        )
+        dpg.add_text("", tag="exit_warning_text", wrap=340)
+        dpg.add_input_text(tag="prop_target_scene", label="Destination Scene Id", width=-1, show=False)
         dpg.add_input_text(
             tag="prop_walk_path",
             label="Walk Path",
@@ -165,6 +183,7 @@ def build_context_panel(dpg, app) -> None:
     dpg.add_separator()
     dpg.add_text("Interaction", tag="context_interactions_header")
     dpg.add_text("Click behavior for the selected hotspot, NPC, or item.", wrap=340, tag="actions_header")
+    dpg.add_combo(tag="recipe_template", items=[], width=-1, default_value="Player says...")
     dpg.add_listbox(
         tag="action_list",
         items=[],
@@ -176,7 +195,14 @@ def build_context_panel(dpg, app) -> None:
         dpg.add_button(label="Add", callback=lambda: app._add_action(dpg))
         dpg.add_button(label="Up", callback=lambda: app._move_action(dpg, -1))
         dpg.add_button(label="Down", callback=lambda: app._move_action(dpg, 1))
+        dpg.add_button(label="Duplicate", callback=lambda: app._duplicate_action(dpg))
         dpg.add_button(label="Remove", callback=lambda: app._remove_action(dpg))
+    dpg.add_button(
+        label="Preview Selected Reaction",
+        tag="preview_interaction_button",
+        callback=lambda: app._preview_selected_interaction(dpg),
+    )
+    dpg.add_text("", tag="action_warning_text", wrap=340)
     dpg.add_combo(
         tag="action_type",
         label="Behavior",

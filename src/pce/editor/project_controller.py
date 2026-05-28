@@ -433,6 +433,74 @@ class ProjectController:
         actions[action_index] = edited
         item.on_click = actions
 
+    def add_action(
+        self,
+        kind: str,
+        object_id: str,
+        action: Action,
+    ) -> int:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        self.record_undo()
+        actions = list(item.on_click)
+        actions.append(copy.deepcopy(action))
+        item.on_click = actions
+        return len(actions) - 1
+
+    def duplicate_action(self, kind: str, object_id: str, action_index: int) -> int:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        if action_index < 0 or action_index >= len(item.on_click):
+            raise IndexError(f"Unknown action index: {action_index}")
+        self.record_undo()
+        actions = list(item.on_click)
+        actions.insert(action_index + 1, copy.deepcopy(actions[action_index]))
+        item.on_click = actions
+        return action_index + 1
+
+    def move_action(self, kind: str, object_id: str, action_index: int, offset: int) -> int:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        if action_index < 0 or action_index >= len(item.on_click):
+            raise IndexError(f"Unknown action index: {action_index}")
+        new_index = max(0, min(len(item.on_click) - 1, action_index + offset))
+        if new_index == action_index:
+            return action_index
+        self.record_undo()
+        actions = list(item.on_click)
+        action = actions.pop(action_index)
+        actions.insert(new_index, action)
+        item.on_click = actions
+        return new_index
+
+    def remove_action(self, kind: str, object_id: str, action_index: int) -> bool:
+        scene = self._require_scene()
+        item = self._require_scene_object(scene, kind, object_id)
+        if not hasattr(item, "on_click"):
+            raise ValueError(f"Unknown action target: {kind}:{object_id}")
+        if action_index < 0 or action_index >= len(item.on_click):
+            return False
+        self.record_undo()
+        actions = list(item.on_click)
+        del actions[action_index]
+        item.on_click = actions
+        return True
+
+    def update_exit_destination(self, exit_id: str, target_scene: str, target_spawn: str) -> None:
+        scene = self._require_scene()
+        exit_data = self._require_scene_object(scene, "exit", exit_id)
+        if exit_data.target_scene == target_scene and exit_data.target_spawn == target_spawn:
+            return
+        self.record_undo()
+        exit_data.target_scene = target_scene
+        exit_data.target_spawn = target_spawn
+
     def update_scene_metadata(
         self,
         *,

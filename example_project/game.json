@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "title": "Mini Adventure",
+  "start_scene": "scene_1",
+  "resolution": {
+    "width": 960,
+    "height": 540
+  },
+  "player": {
+    "sprite": "assets/sprites/player.png",
+    "default_scene": "scene_1",
+    "default_spawn": "start"
+  },
+  "scenes": [
+    "scenes/scene_1.json",
+    "scenes/scene_2.json"
+  ],
+  "items": [
+    {
+      "id": "key",
+      "name": "Key",
+      "description": "A small brass key."
+    }
+  ]
+}

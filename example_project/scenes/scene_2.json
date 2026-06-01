@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "id": "scene_2",
+  "name": "Scene 2",
+  "background": "assets/backgrounds/scene_2.png",
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "hotspots",
+      "type": "hotspots",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "characters",
+      "type": "characters",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "foreground",
+      "type": "foreground",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "spawns": [
+    {
+      "id": "start",
+      "position": [
+        120,
+        400
+      ],
+      "facing": "right"
+    }
+  ],
+  "hotspots": [],
+  "exits": [],
+  "npcs": [],
+  "items": []
+}

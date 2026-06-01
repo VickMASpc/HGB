@@ -1854,7 +1854,6 @@ class EditorApp:
         dpg.configure_item("dialogue_choice_condition_operator", items=CONDITION_OPERATORS)
         dpg.configure_item("dialogue_choice_condition_not_type", items=CONDITION_TYPES[:-1])
         dpg.configure_item("prop_layer", items=layer_ids)
-        dpg.configure_item("prop_target_scene", items=scene_ids)
         dpg.configure_item("prop_target_scene_card", items=scene_card_labels(self.controller.scenes))
         dpg.configure_item("prop_target_spawn", items=spawn_ids)
         dpg.configure_item("recipe_template", items=list(RECIPE_TEMPLATES.keys()))

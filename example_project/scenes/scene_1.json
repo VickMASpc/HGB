@@ -45,9 +45,9 @@
       "name": "Look Around",
       "rect": [
         400,
-        260,
-        150,
-        100
+        200,
+        190,
+        80
       ],
       "layer": "hotspots",
       "enabled": true,
@@ -64,7 +64,35 @@
       ]
     }
   ],
-  "exits": [],
+  "exits": [
+    {
+      "id": "exit_1",
+      "name": "Exit 1",
+      "rect": [
+        840,
+        220,
+        80,
+        220
+      ],
+      "walk_path": [
+        [
+          500,
+          390
+        ],
+        [
+          760,
+          385
+        ],
+        [
+          880,
+          370
+        ]
+      ],
+      "target_scene": "scene_1",
+      "target_spawn": "start",
+      "layer": "hotspots"
+    }
+  ],
   "npcs": [],
   "items": []
 }

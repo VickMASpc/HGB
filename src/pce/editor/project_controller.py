@@ -206,14 +206,7 @@ class ProjectController:
         scene = self._require_scene()
         self.record_undo()
         npc = next(item for item in scene.npcs if item.id == npc_id)
-        number = len(npc.dialogue_nodes) + 1
-        node = DialogueNode(
-            id=self._unique_dialogue_node_id(npc, f"node_{number}"),
-            speaker=npc.name,
-            text="New line.",
-        )
-        npc.dialogue_nodes.append(node)
-        return node
+        return self._append_dialogue_node(npc)
 
     def insert_dialogue_node_after(self, npc_id: str, node_id: str) -> DialogueNode:
         npc = self._require_npc(npc_id)
@@ -221,14 +214,8 @@ class ProjectController:
         if index is None:
             raise ValueError(f"Unknown dialogue node: {node_id}")
         self.record_undo()
-        number = len(npc.dialogue_nodes) + 1
-        node = DialogueNode(
-            id=self._unique_dialogue_node_id(npc, f"node_{number}"),
-            speaker=npc.name,
-            text="New line.",
-        )
-        next_id = npc.dialogue_nodes[index + 1].id if index + 1 < len(npc.dialogue_nodes) else None
-        npc.dialogue_nodes.insert(index + 1, node)
+        next_id = self._next_dialogue_node_id(npc, node_id)
+        node = self._append_dialogue_node(npc, insert_at=index + 1)
         if next_id is not None:
             for choice in npc.dialogue_nodes[index].choices:
                 if choice.target == next_id:
@@ -251,6 +238,39 @@ class ProjectController:
         choice = DialogueChoice(text="Continue.")
         node.choices.append(choice)
         return choice
+
+    def set_dialogue_choice_destination(
+        self,
+        npc_id: str,
+        node_id: str,
+        choice_index: int,
+        destination: str,
+    ) -> str | None:
+        npc = self._require_npc(npc_id)
+        node = self._require_dialogue_node(npc, node_id)
+        if choice_index < 0 or choice_index >= len(node.choices):
+            raise IndexError(f"Unknown dialogue choice index: {choice_index}")
+        destination_key = destination.strip().lower()
+        if destination_key not in {"continue", "end conversation", "new branch"}:
+            raise ValueError(f"Unknown dialogue destination: {destination}")
+        current_target = node.choices[choice_index].target
+        self.record_undo()
+        if destination_key == "continue":
+            target = self._next_dialogue_node_id(npc, node_id)
+            if target is None:
+                index = next(idx for idx, item in enumerate(npc.dialogue_nodes) if item.id == node_id)
+                target = self._append_dialogue_node(npc, insert_at=index + 1).id
+            node.choices[choice_index].target = target
+        elif destination_key == "new branch":
+            target = self._append_dialogue_node(npc).id
+            node.choices[choice_index].target = target
+        else:
+            target = None
+            node.choices[choice_index].target = None
+        if node.choices[choice_index].target == current_target and destination_key != "new branch":
+            self._undo_stack.pop()
+            return current_target
+        return target
 
     def update_dialogue_choice(
         self,
@@ -844,6 +864,26 @@ class ProjectController:
             if node.id == node_id:
                 return node
         raise ValueError(f"Unknown dialogue node: {node_id}")
+
+    def _append_dialogue_node(self, npc: NPC, insert_at: int | None = None) -> DialogueNode:
+        number = len(npc.dialogue_nodes) + 1
+        node = DialogueNode(
+            id=self._unique_dialogue_node_id(npc, f"node_{number}"),
+            speaker=npc.name,
+            text="New line.",
+        )
+        if insert_at is None:
+            npc.dialogue_nodes.append(node)
+        else:
+            npc.dialogue_nodes.insert(insert_at, node)
+        return node
+
+    @staticmethod
+    def _next_dialogue_node_id(npc: NPC, node_id: str) -> str | None:
+        for index, node in enumerate(npc.dialogue_nodes):
+            if node.id == node_id and index + 1 < len(npc.dialogue_nodes):
+                return npc.dialogue_nodes[index + 1].id
+        return None
 
     @staticmethod
     def _require_layer(scene: SceneConfig, layer_id: str) -> LayerConfig:

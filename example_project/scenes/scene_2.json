@@ -2,7 +2,7 @@
   "schema_version": 2,
   "id": "scene_2",
   "name": "Scene 2",
-  "background": "assets/backgrounds/scene_2.png",
+  "background": "assets/backgrounds/scene_1.png",
   "layers": [
     {
       "id": "background",
@@ -40,7 +40,76 @@
     }
   ],
   "hotspots": [],
-  "exits": [],
-  "npcs": [],
+  "exits": [
+    {
+      "id": "exit_1",
+      "name": "Exit 1",
+      "rect": [
+        200,
+        0,
+        80,
+        220
+      ],
+      "walk_path": [
+        [
+          220,
+          320
+        ],
+        [
+          240,
+          200
+        ],
+        [
+          240,
+          120
+        ],
+        [
+          260,
+          80
+        ]
+      ],
+      "target_scene": "scene_1",
+      "target_spawn": "start",
+      "layer": "hotspots"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "npc_1",
+      "name": "NPC 1",
+      "position": [
+        620,
+        390
+      ],
+      "lines": [
+        "Hello!",
+        "Let's explore."
+      ],
+      "on_click": [
+        {
+          "type": "dialogue",
+          "npc": "npc_1",
+          "path": [],
+          "actions": [],
+          "if_actions": [],
+          "else_actions": []
+        }
+      ],
+      "dialogue_nodes": [
+        {
+          "id": "hello",
+          "speaker": "NPC 1",
+          "text": "Hello!",
+          "choices": [
+            {
+              "text": "Goodbye.",
+              "actions": []
+            }
+          ],
+          "actions": []
+        }
+      ]
+    }
+  ],
   "items": []
 }

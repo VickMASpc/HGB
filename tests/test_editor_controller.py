@@ -4,12 +4,15 @@ from pathlib import Path
 
 import pytest
 
+from pce.editor.app import EditorApp
 from pce.editor.canvas import CanvasState, CanvasTransform
+from pce.editor.main import build_parser
 from pce.editor.project_controller import ProjectController
 from pce.editor.panels.action_list_panel import action_to_json, condition_to_json, merge_action_from_fields
 from pce.editor.panels.dialogue_panel import merge_choice_from_fields
 from pce.editor.panels.dialogue_studio import target_id_from_label, target_options, validate_dialogue_graph
 from pce.editor.panels.properties_panel import inspector_field_visibility
+from pce.editor.panels.workspaces import normalize_workspace, workspace_panel_visibility
 from pce.editor.panels.visual_editors import (
     merge_action_from_visual_fields,
     merge_condition_from_fields,
@@ -504,17 +507,39 @@ def test_noop_mutations_do_not_mark_dirty(sample_project: Path) -> None:
     assert not controller.is_dirty
 
 
-def test_default_studio_visibility_focuses_on_creator_friendly_fields() -> None:
-    visible = inspector_field_visibility("npc", True, advanced=False)
+def test_editor_defaults_to_build_workspace() -> None:
+    app = EditorApp()
+
+    assert app.active_workspace == "Build"
+
+
+def test_workspace_aliases_and_panel_visibility_support_build_dialogue_and_check() -> None:
+    assert normalize_workspace("Studio") == "Build"
+    assert normalize_workspace("Playtest") == "Check"
+
+    build = workspace_panel_visibility("Build")
+    dialogue = workspace_panel_visibility("Dialogue")
+    check = workspace_panel_visibility("Check")
+
+    assert build["workspace_panel_build"]
+    assert not build["workspace_panel_dialogue"]
+    assert dialogue["workspace_panel_dialogue"]
+    assert not dialogue["workspace_panel_build"]
+    assert check["workspace_panel_check"]
+    assert not check["workspace_panel_build"]
+
+
+def test_build_workspace_visibility_focuses_on_creator_friendly_fields() -> None:
+    visible = inspector_field_visibility("npc", True, workspace="Build", advanced=False)
 
     assert visible["prop_name"]
     assert visible["prop_pos"]
-    assert visible["dialogue_composer"]
-    assert visible["dialogue_composer_panel"]
-    assert visible["dialogue_composer_preview"]
     assert visible["action_list"]
+    assert visible["edit_conversation_button"]
+    assert visible["dialogue_workspace_hint"]
     assert not visible["prop_id"]
     assert not visible["prop_layer"]
+    assert not visible["dialogue_composer"]
     assert not visible["dialogue_node_id"]
     assert not visible["dialogue_node_list"]
     assert not visible["dialogue_choice_target"]
@@ -522,7 +547,7 @@ def test_default_studio_visibility_focuses_on_creator_friendly_fields() -> None:
 
 
 def test_expert_visibility_reveals_implementation_details() -> None:
-    visible = inspector_field_visibility("hotspot", True, advanced=True)
+    visible = inspector_field_visibility("hotspot", True, workspace="Build", advanced=True)
 
     assert visible["action_list"]
     assert visible["action_condition_type"]
@@ -534,7 +559,7 @@ def test_expert_visibility_reveals_implementation_details() -> None:
 
 
 def test_scene_selection_shows_scene_tools_instead_of_object_actions() -> None:
-    visible = inspector_field_visibility("scene", True, advanced=False)
+    visible = inspector_field_visibility("scene", True, workspace="Build", advanced=False)
 
     assert visible["context_scene_tools"]
     assert visible["prop_name"]
@@ -542,6 +567,40 @@ def test_scene_selection_shows_scene_tools_instead_of_object_actions() -> None:
     assert visible["player_sprite_button"]
     assert not visible["duplicate_button"]
     assert not visible["action_list"]
+
+
+def test_switching_workspaces_changes_visible_editor_groups() -> None:
+    build = inspector_field_visibility("npc", True, workspace="Build", advanced=False)
+    dialogue = inspector_field_visibility("npc", True, workspace="Dialogue", advanced=False)
+    check = inspector_field_visibility("npc", True, workspace="Check", advanced=False)
+
+    assert build["action_list"]
+    assert not build["dialogue_composer"]
+    assert dialogue["dialogue_composer"]
+    assert not dialogue["action_list"]
+    assert not check["context_primary_properties"]
+    assert not check["dialogue_composer"]
+
+
+def test_dialogue_workspace_simple_mode_hides_implementation_heavy_controls() -> None:
+    visible = inspector_field_visibility("npc", True, workspace="Dialogue", advanced=False)
+
+    assert visible["dialogue_composer"]
+    assert visible["dialogue_composer_panel"]
+    assert visible["dialogue_composer_preview"]
+    assert not visible["dialogue_node_list"]
+    assert not visible["dialogue_choice_target"]
+    assert not visible["action_list"]
+
+
+def test_dialogue_workspace_expert_mode_restores_advanced_controls() -> None:
+    visible = inspector_field_visibility("npc", True, workspace="Dialogue", advanced=True)
+
+    assert visible["dialogue_node_list"]
+    assert visible["dialogue_choice_target"]
+    assert visible["apply_dialogue_node_button"]
+    assert visible["apply_choice_button"]
+    assert visible["action_list"]
 
 
 def test_dialogue_studio_helpers_label_targets_and_validate_graph(sample_project: Path) -> None:
@@ -605,6 +664,59 @@ def test_controller_inserts_next_line_and_retargets_continue_branch(sample_proje
     assert npc.dialogue_nodes[0].choices[0].target == inserted.id
 
 
+def test_continue_destination_creates_next_line_and_supports_single_undo(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    controller.add_dialogue_choice("dog", "done")
+    created_id = controller.set_dialogue_choice_destination("dog", "done", 0, "Continue")
+
+    scene = controller.current_scene
+    assert scene is not None
+    npc = scene.npcs[0]
+    assert created_id is not None
+    assert npc.dialogue_nodes[-1].id == created_id
+    assert npc.dialogue_nodes[2].choices[0].target == created_id
+
+    assert controller.undo()
+    assert controller.current_scene is not None
+    restored = controller.current_scene.npcs[0]
+    assert len(restored.dialogue_nodes) == 3
+    assert restored.dialogue_nodes[2].choices[0].target is None
+
+    assert controller.redo()
+    assert controller.current_scene is not None
+    redone = controller.current_scene.npcs[0]
+    assert len(redone.dialogue_nodes) == 4
+    assert redone.dialogue_nodes[2].choices[0].target == created_id
+
+
+def test_new_branch_destination_creates_card_and_connects_reply(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    controller.add_dialogue_choice("dog", "hello")
+    created_id = controller.set_dialogue_choice_destination("dog", "hello", 2, "New branch")
+
+    scene = controller.current_scene
+    assert scene is not None
+    npc = scene.npcs[0]
+    assert created_id is not None
+    assert npc.dialogue_nodes[-1].id == created_id
+    assert npc.dialogue_nodes[0].choices[2].target == created_id
+
+    assert controller.undo()
+    assert controller.current_scene is not None
+    restored = controller.current_scene.npcs[0]
+    assert len(restored.dialogue_nodes) == 3
+    assert restored.dialogue_nodes[0].choices[2].target is None
+
+    assert controller.redo()
+    assert controller.current_scene is not None
+    redone = controller.current_scene.npcs[0]
+    assert redone.dialogue_nodes[0].choices[2].target == created_id
+
+
 def test_controller_deleting_linear_node_retargets_continue_and_supports_undo_redo(sample_project: Path) -> None:
     controller = ProjectController()
     controller.open_project(sample_project)
@@ -646,6 +758,39 @@ def test_controller_can_reorder_dialogue_choices(sample_project: Path) -> None:
     assert controller.current_scene.npcs[0].dialogue_nodes[0].choices[2].text == "Maybe later"
 
 
+def test_dialogue_choice_condition_and_effect_edits_support_undo_redo(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+
+    controller.update_dialogue_choice(
+        "dog",
+        "hello",
+        0,
+        condition=Condition(type="has_item", item="clubhouse_key"),
+        actions=[Action(type="set_variable", variable="opened", value=True)],
+    )
+
+    scene = controller.current_scene
+    assert scene is not None
+    choice = scene.npcs[0].dialogue_nodes[0].choices[0]
+    assert choice.condition is not None
+    assert choice.condition.item == "clubhouse_key"
+    assert choice.actions[0].variable == "opened"
+
+    assert controller.undo()
+    assert controller.current_scene is not None
+    restored = controller.current_scene.npcs[0].dialogue_nodes[0].choices[0]
+    assert restored.condition is None
+    assert restored.actions == []
+
+    assert controller.redo()
+    assert controller.current_scene is not None
+    redone = controller.current_scene.npcs[0].dialogue_nodes[0].choices[0]
+    assert redone.condition is not None
+    assert redone.condition.item == "clubhouse_key"
+    assert redone.actions[0].variable == "opened"
+
+
 def test_dialogue_validation_preserves_empty_missing_and_unreachable_checks_after_mutations(sample_project: Path) -> None:
     controller = ProjectController()
     controller.open_project(sample_project)
@@ -670,3 +815,12 @@ def test_editor_exports_playable_project(sample_project: Path) -> None:
     export = controller.export_playable()
     assert (export / "game.json").exists()
     assert (export / "RUN.txt").exists()
+
+
+def test_editor_main_help_still_works() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as excinfo:
+        parser.parse_args(["--help"])
+
+    assert excinfo.value.code == 0

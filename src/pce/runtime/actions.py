@@ -23,10 +23,16 @@ class RuntimeContext:
         return self.scene_manager.current_scene
 
 
+@dataclass(slots=True)
+class _DialoguePresentation:
+    npc_id: str
+    node_id: str
+
+
 class ActionRunner:
     def __init__(self, context: RuntimeContext) -> None:
         self.context = context
-        self.pending: deque[Action] = deque()
+        self.pending: deque[Action | _DialoguePresentation] = deque()
         self.waiting_for_movement = False
 
     @property
@@ -36,6 +42,10 @@ class ActionRunner:
     def start(self, actions: list[Action]) -> None:
         self.pending.extend(actions)
         self._step()
+
+    def reset(self) -> None:
+        self.pending.clear()
+        self.waiting_for_movement = False
 
     def update(self) -> None:
         if self.waiting_for_movement and not self.context.player.moving:
@@ -47,6 +57,9 @@ class ActionRunner:
     def _step(self) -> None:
         while self.pending and not self.context.dialogue.active and not self.context.player.moving:
             action = self.pending.popleft()
+            if isinstance(action, _DialoguePresentation):
+                self._show_dialogue_node(action.npc_id, action.node_id)
+                return
             if action.type == "say":
                 self.context.dialogue.say(action.speaker or "", action.text or "")
                 return
@@ -56,16 +69,9 @@ class ActionRunner:
                     node_id = action.node
                     node = next((item for item in npc.dialogue_nodes if item.id == node_id), None)
                     if node is not None:
-                        choices = [
-                            RuntimeChoice(choice.text, choice.target, choice.actions)
-                            for choice in node.choices
-                            if evaluate_condition(
-                                self.context.state,
-                                choice.condition,
-                                self.context.scene_manager.current_scene_id,
-                            )
-                        ]
-                        self.context.dialogue.show_node(node.speaker or npc.name, node.text, choices)
+                        self.pending.appendleft(_DialoguePresentation(npc.id, node.id))
+                        self.pending.extendleft(reversed(node.actions))
+                        continue
                     else:
                         self.context.dialogue.start_lines(npc.name, npc.lines)
                 return
@@ -86,6 +92,7 @@ class ActionRunner:
                 continue
             if action.type == "sequence":
                 self.pending.extendleft(reversed(action.actions))
+                continue
             if action.type == "set_variable" and action.variable:
                 self.context.state.variables[action.variable] = action.value
                 continue
@@ -110,4 +117,22 @@ class ActionRunner:
                 ):
                     selected = action.else_actions
                 self.pending.extendleft(reversed(selected))
+                continue
 
+    def _show_dialogue_node(self, npc_id: str, node_id: str) -> None:
+        npc = next((item for item in self.context.current_scene.npcs if item.id == npc_id), None)
+        if npc is None:
+            return
+        node = next((item for item in npc.dialogue_nodes if item.id == node_id), None)
+        if node is None:
+            return
+        choices = [
+            RuntimeChoice(choice.text, choice.target, choice.actions)
+            for choice in node.choices
+            if evaluate_condition(
+                self.context.state,
+                choice.condition,
+                self.context.scene_manager.current_scene_id,
+            )
+        ]
+        self.context.dialogue.show_node(node.speaker or npc.name, node.text, choices)

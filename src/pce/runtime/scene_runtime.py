@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pce.runtime.state import object_key
-from pce.shared.models import Action, Exit, NPC, Point, Rect, RuntimeState, SceneConfig
+from pce.runtime.state import is_object_enabled
+from pce.shared.models import Action, Exit, NPC, Point, Rect, RuntimeState, SceneConfig, SceneItem
 
 
 def point_in_rect(point: Point, rect: Rect) -> bool:
@@ -26,9 +26,7 @@ class SceneRuntime:
         self.state = state
 
     def _enabled(self, object_id: str, default: bool = True) -> bool:
-        if self.state is None:
-            return default
-        return self.state.object_enabled.get(object_key(self.scene.id, object_id), default)
+        return is_object_enabled(self.state, self.scene.id, object_id, default)
 
     def hit_test(self, point: Point) -> ClickTarget | None:
         for exit_data in reversed(self.scene.exits):
@@ -64,3 +62,14 @@ def npc_rect(npc: NPC) -> Rect:
     x, y = npc.position
     return x - 24, y - 72, 48, 72
 
+
+def visible_npcs(scene: SceneConfig, state: RuntimeState | None) -> list[NPC]:
+    return [npc for npc in scene.npcs if is_object_enabled(state, scene.id, npc.id)]
+
+
+def visible_items(scene: SceneConfig, state: RuntimeState | None) -> list[SceneItem]:
+    return [
+        item
+        for item in scene.items
+        if is_object_enabled(state, scene.id, item.id, item.enabled)
+    ]

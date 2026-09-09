@@ -11,6 +11,17 @@ def object_key(scene_id: str, object_id: str) -> str:
     return f"{scene_id}:{object_id}"
 
 
+def is_object_enabled(
+    state: RuntimeState | None,
+    scene_id: str,
+    object_id: str,
+    default: bool = True,
+) -> bool:
+    if state is None:
+        return default
+    return state.object_enabled.get(object_key(scene_id, object_id), default)
+
+
 def evaluate_condition(state: RuntimeState, condition: Condition | None, scene_id: str) -> bool:
     if condition is None or condition.type == "always":
         return True
@@ -21,7 +32,7 @@ def evaluate_condition(state: RuntimeState, condition: Condition | None, scene_i
     if condition.type == "object_enabled":
         if not condition.object_id:
             return False
-        return state.object_enabled.get(object_key(scene_id, condition.object_id), True)
+        return is_object_enabled(state, scene_id, condition.object_id)
     if condition.type == "variable":
         left = state.variables.get(condition.variable or "")
         right = condition.value

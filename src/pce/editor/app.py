@@ -50,7 +50,7 @@ from pce.editor.panels.theme import apply_theme
 from pce.editor.panels.workspaces import normalize_workspace, workspace_panel_visibility
 from pce.editor.panels.visual_editors import CONDITION_OPERATORS, CONDITION_TYPES, merge_action_from_visual_fields, merge_condition_from_fields
 from pce.editor.preview_bridge import play_current_scene, run_full_game
-from pce.editor.project_controller import ProjectController, ProjectSnapshot
+from pce.editor.project_controller import ProjectController, ProjectSnapshot, ProjectValidationError
 from pce.editor.state import selection_summary
 from pce.shared.models import Action, Condition, DialogueChoice
 
@@ -373,14 +373,29 @@ class EditorApp:
         self._refresh(dpg)
 
     def _play_scene(self, dpg) -> None:
-        play_current_scene(self.controller)
-        self.status = "Launched current scene."
+        try:
+            play_current_scene(self.controller)
+        except ProjectValidationError as exc:
+            self._show_validation_block(dpg, "Playtest blocked", exc.issues)
+        else:
+            self.status = "Launched current scene."
         self._refresh(dpg)
 
     def _run_game(self, dpg) -> None:
-        run_full_game(self.controller)
-        self.status = "Launched full game."
+        try:
+            run_full_game(self.controller)
+        except ProjectValidationError as exc:
+            self._show_validation_block(dpg, "Launch blocked", exc.issues)
+        else:
+            self.status = "Launched full game."
         self._refresh(dpg)
+
+    def _show_validation_block(self, dpg, label: str, issues) -> None:
+        errors = [issue for issue in issues if issue.severity.value == "ERROR"]
+        details = "\n".join(f"{issue.code}: {issue.message}" for issue in errors)
+        self.status = f"{label}: fix {len(errors)} validation error(s)."
+        if dpg.does_item_exist("validation_text"):
+            dpg.set_value("validation_text", details)
 
     def _create_scene(self, dpg) -> None:
         try:
@@ -1241,8 +1256,12 @@ class EditorApp:
         self._refresh(dpg)
 
     def _preview_conversation(self, dpg) -> None:
-        play_current_scene(self.controller)
-        self.status = "Saved and launched the current scene. Click the NPC in the playtest to preview this conversation."
+        try:
+            play_current_scene(self.controller)
+        except ProjectValidationError as exc:
+            self._show_validation_block(dpg, "Conversation preview blocked", exc.issues)
+        else:
+            self.status = "Saved and launched the current scene. Click the NPC in the playtest to preview this conversation."
         self._refresh(dpg)
 
     def _dialogue_node_by_id(self, node_id: str):

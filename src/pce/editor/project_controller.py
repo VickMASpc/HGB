@@ -22,14 +22,22 @@ from pce.shared.models import (
     SceneConfig,
     SceneItem,
     SpawnPoint,
+    ValidationIssue,
 )
 from pce.shared.serialization import autosave_project, create_project, load_project, load_scenes, save_project
 from pce.shared.schema import scene_from_dict
-from pce.shared.validation import ValidationIssue, validate_project
+from pce.shared.validation import has_errors, validate_project
 
 
 ProjectSnapshot = tuple[ProjectConfig, dict[str, SceneConfig], str | None]
 _UNSET = object()
+
+
+class ProjectValidationError(ValueError):
+    def __init__(self, issues: list[ValidationIssue]) -> None:
+        self.issues = issues
+        details = "\n".join(f"{issue.code}: {issue.message}" for issue in issues if issue.severity.value == "ERROR")
+        super().__init__(f"Project has validation errors:\n{details}")
 
 
 class ProjectController:
@@ -87,6 +95,12 @@ class ProjectController:
         if self.project_root is None or self.project is None:
             return []
         return validate_project(self.project_root, self.project, self.scenes)
+
+    def validation_gate(self) -> list[ValidationIssue]:
+        issues = self.validate()
+        if has_errors(issues):
+            raise ProjectValidationError(issues)
+        return issues
 
     def create_scene(self, scene_id: str) -> None:
         if self.project is None:
@@ -793,6 +807,7 @@ class ProjectController:
     def export_playable(self) -> Path:
         if self.project_root is None:
             raise ValueError("No project is open.")
+        self.validation_gate()
         self.save()
         export_root = self.project_root / "exports" / datetime.now().strftime("playable_%Y-%m-%d_%H%M%S")
         if export_root.exists():
@@ -815,6 +830,8 @@ class ProjectController:
     def run_runtime(self, scene_id: str | None = None) -> subprocess.Popen:
         if self.project_root is None:
             raise ValueError("No project is open.")
+        self.validation_gate()
+        self.save()
         command = [
             sys.executable,
             "-m",

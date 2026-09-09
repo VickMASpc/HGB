@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pce.shared.asset_paths import project_path
 from pce.shared.constants import SCHEMA_VERSION
-from pce.shared.models import Action, Condition, ProjectConfig, SceneConfig, Severity, ValidationIssue
+from pce.shared.models import Action, Condition, NPC, ProjectConfig, SceneConfig, Severity, ValidationIssue
 from pce.shared.serialization import load_project, load_scenes
 
 
@@ -186,6 +186,10 @@ def validate_scene(
 
     spawn_ids = {spawn.id for spawn in scene.spawns}
     npc_ids = {npc.id for npc in scene.npcs}
+    npc_dialogue = {
+        npc.id: ({node.id for node in npc.dialogue_nodes}, bool(npc.lines))
+        for npc in scene.npcs
+    }
     scene_object_ids = set(ids)
     for hotspot in scene.hotspots:
         x, y, width, height = hotspot.rect
@@ -199,7 +203,7 @@ def validate_scene(
                     hotspot.id,
                 )
             )
-        issues.extend(_validate_actions(scene_file, hotspot.id, hotspot.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+        issues.extend(_validate_actions(scene_file, hotspot.id, hotspot.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
 
     for exit_data in scene.exits:
         x, y, width, height = exit_data.rect
@@ -249,18 +253,13 @@ def validate_scene(
             sprite_issue = _asset_issue(project_root, npc.sprite, "MISSING_NPC_SPRITE", scene_file, npc.id)
             if sprite_issue:
                 issues.append(sprite_issue)
-        node_ids = {node.id for node in npc.dialogue_nodes}
-        for node_id, count in Counter(node_ids).items():
-            if node_id and count > 1:
-                issues.append(_issue(Severity.ERROR, "DUPLICATE_DIALOGUE_NODE", f"Duplicate dialogue node '{node_id}'.", scene_file, npc.id))
+        issues.extend(validate_dialogue_graph(npc, scene_file))
         for node in npc.dialogue_nodes:
-            issues.extend(_validate_actions(scene_file, npc.id, node.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            issues.extend(_validate_actions(scene_file, npc.id, node.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
             for choice in node.choices:
-                if choice.target and choice.target not in node_ids:
-                    issues.append(_issue(Severity.ERROR, "MISSING_DIALOGUE_NODE", f"Choice references missing dialogue node '{choice.target}'.", scene_file, npc.id))
                 issues.extend(_validate_condition(scene_file, npc.id, choice.condition, item_ids, scene_object_ids))
-                issues.extend(_validate_actions(scene_file, npc.id, choice.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
-        issues.extend(_validate_actions(scene_file, npc.id, npc.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+                issues.extend(_validate_actions(scene_file, npc.id, choice.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
+        issues.extend(_validate_actions(scene_file, npc.id, npc.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
 
     for item in scene.items:
         x, y, width, height = item.rect
@@ -268,8 +267,68 @@ def validate_scene(
             issues.append(_issue(Severity.ERROR, "INVALID_RECT", f"Item '{item.id}' has invalid rect {item.rect}.", scene_file, item.id))
         if item.item_id not in item_ids:
             issues.append(_issue(Severity.ERROR, "MISSING_ITEM_DEFINITION", f"Scene item '{item.id}' references missing item '{item.item_id}'.", scene_file, item.id))
-        issues.extend(_validate_actions(scene_file, item.id, item.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+        issues.extend(_validate_actions(scene_file, item.id, item.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
 
+    return issues
+
+
+def validate_dialogue_graph(npc: NPC, scene_file: str | None = None) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    node_ids = [node.id for node in npc.dialogue_nodes]
+    known_ids = set(node_ids)
+    for node_id, count in Counter(node_ids).items():
+        if node_id and count > 1:
+            issues.append(_issue(Severity.ERROR, "DUPLICATE_DIALOGUE_NODE", f"Duplicate dialogue node '{node_id}'.", scene_file, npc.id))
+    for node in npc.dialogue_nodes:
+        if not node.id.strip():
+            issues.append(_issue(Severity.ERROR, "EMPTY_DIALOGUE_NODE_ID", "Dialogue node id is empty.", scene_file, npc.id))
+        if not node.text.strip():
+            issues.append(_issue(Severity.ERROR, "EMPTY_DIALOGUE_NODE_TEXT", f"Dialogue node '{node.id}' has empty text.", scene_file, npc.id))
+        for index, choice in enumerate(node.choices):
+            if not choice.text.strip():
+                issues.append(_issue(Severity.ERROR, "EMPTY_DIALOGUE_CHOICE_TEXT", f"Choice {index + 1} on dialogue node '{node.id}' has empty text.", scene_file, npc.id))
+            if choice.target and choice.target not in known_ids:
+                issues.append(_issue(Severity.ERROR, "MISSING_DIALOGUE_NODE", f"Choice references missing dialogue node '{choice.target}'.", scene_file, npc.id))
+        issues.extend(_validate_dialogue_node_effects(scene_file, npc.id, node.actions))
+    reachable: set[str] = set()
+    pending = [node_ids[0]] if node_ids else []
+    nodes_by_id = {node.id: node for node in npc.dialogue_nodes}
+    while pending:
+        node_id = pending.pop()
+        if node_id in reachable or node_id not in nodes_by_id:
+            continue
+        reachable.add(node_id)
+        pending.extend(choice.target for choice in nodes_by_id[node_id].choices if choice.target)
+    for node in npc.dialogue_nodes:
+        if node.id and node.id not in reachable:
+            issues.append(_issue(Severity.WARNING, "UNREACHABLE_DIALOGUE_NODE", f"Dialogue node '{node.id}' is unreachable from the first node.", scene_file, npc.id))
+    return issues
+
+
+def _validate_dialogue_node_effects(
+    scene_file: str | None,
+    object_id: str,
+    actions: list[Action],
+) -> list[ValidationIssue]:
+    """Restrict pre-display node effects to immediate, non-blocking state changes."""
+    issues: list[ValidationIssue] = []
+    supported = {"set_variable", "give_item", "remove_item", "set_object_enabled"}
+    for action in actions:
+        if action.type == "sequence":
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.actions))
+        elif action.type == "conditional":
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.if_actions))
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.else_actions))
+        elif action.type not in supported:
+            issues.append(
+                _issue(
+                    Severity.ERROR,
+                    "UNSUPPORTED_DIALOGUE_NODE_EFFECT",
+                    f"Dialogue node effect '{action.type}' must be an immediate state action.",
+                    scene_file,
+                    object_id,
+                )
+            )
     return issues
 
 
@@ -282,6 +341,7 @@ def _validate_actions(
     npc_ids: set[str],
     item_ids: set[str],
     scene_object_ids: set[str],
+    npc_dialogue: dict[str, tuple[set[str], bool]],
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     for action in actions:
@@ -295,6 +355,12 @@ def _validate_actions(
                     object_id,
                 )
             )
+        elif action.type == "dialogue" and action.npc:
+            node_ids, has_lines = npc_dialogue[action.npc]
+            if action.node and action.node not in node_ids:
+                issues.append(_issue(Severity.ERROR, "MISSING_DIALOGUE_ACTION_NODE", f"Dialogue action references missing node '{action.node}' on NPC '{action.npc}'.", scene_file, object_id))
+            elif not action.node and not has_lines:
+                issues.append(_issue(Severity.ERROR, "EMPTY_DIALOGUE_ACTION", f"Dialogue action for NPC '{action.npc}' has no node or fallback lines.", scene_file, object_id))
         if action.type == "change_scene":
             if not action.scene or action.scene not in scenes:
                 issues.append(
@@ -327,7 +393,7 @@ def _validate_actions(
                 )
             )
         if action.type == "sequence":
-            issues.extend(_validate_actions(scene_file, object_id, action.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            issues.extend(_validate_actions(scene_file, object_id, action.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
         if action.type in {"give_item", "remove_item"} and action.item not in item_ids:
             issues.append(_issue(Severity.ERROR, "MISSING_ACTION_ITEM", f"Action references missing item '{action.item}'.", scene_file, object_id))
         if action.type == "set_object_enabled" and action.object_id not in scene_object_ids:
@@ -336,8 +402,8 @@ def _validate_actions(
             issues.append(_issue(Severity.ERROR, "INVALID_VARIABLE_NAME", f"Invalid variable name '{action.variable}'.", scene_file, object_id))
         if action.type == "conditional":
             issues.extend(_validate_condition(scene_file, object_id, action.condition, item_ids, scene_object_ids))
-            issues.extend(_validate_actions(scene_file, object_id, action.if_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
-            issues.extend(_validate_actions(scene_file, object_id, action.else_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            issues.extend(_validate_actions(scene_file, object_id, action.if_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
+            issues.extend(_validate_actions(scene_file, object_id, action.else_actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids, npc_dialogue))
     return issues
 
 
@@ -370,4 +436,3 @@ def _valid_variable_name(value: str | None) -> bool:
 
 def has_errors(issues: list[ValidationIssue]) -> bool:
     return any(issue.severity == Severity.ERROR for issue in issues)
-

@@ -91,7 +91,10 @@ class Engine:
         self.player.position = self.state.player_position
         self.player._precise_x = float(self.player.position[0])
         self.player._precise_y = float(self.player.position[1])
+        self.player._path = []
         self.actions.context.state = self.state
+        self.actions.reset()
+        self.dialogue.reset()
 
     @staticmethod
     def _dialogue_action(npc_id: str, node_id: str):
@@ -147,6 +150,6 @@ class PygameApp:
                 [choice.text for choice in self.engine.dialogue.choices],
                 self.engine.state.inventory,
                 self.engine.debug.enabled,
+                self.engine.state,
             )
         pygame.quit()
-

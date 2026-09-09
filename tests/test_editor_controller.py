@@ -7,7 +7,7 @@ import pytest
 from pce.editor.app import EditorApp
 from pce.editor.canvas import CanvasState, CanvasTransform
 from pce.editor.main import build_parser
-from pce.editor.project_controller import ProjectController
+from pce.editor.project_controller import ProjectController, ProjectValidationError
 from pce.editor.panels.action_list_panel import action_to_json, condition_to_json, merge_action_from_fields
 from pce.editor.panels.dialogue_panel import merge_choice_from_fields
 from pce.editor.panels.dialogue_studio import target_id_from_label, target_options, validate_dialogue_graph
@@ -619,7 +619,11 @@ def test_dialogue_studio_helpers_label_targets_and_validate_graph(sample_project
 
     issues = validate_dialogue_graph(npc)
     codes = {issue.code for issue in issues}
-    assert {"EMPTY_RESPONSE", "MISSING_TARGET", "UNREACHABLE_NODE"} <= codes
+    assert {
+        "EMPTY_DIALOGUE_CHOICE_TEXT",
+        "MISSING_DIALOGUE_NODE",
+        "UNREACHABLE_DIALOGUE_NODE",
+    } <= codes
 
 
 def test_controller_dialogue_studio_operations_preserve_retargeting_and_undo(sample_project: Path) -> None:
@@ -806,7 +810,12 @@ def test_dialogue_validation_preserves_empty_missing_and_unreachable_checks_afte
 
     issues = validate_dialogue_graph(npc)
     codes = {issue.code for issue in issues}
-    assert {"EMPTY_NODE_TEXT", "EMPTY_RESPONSE", "MISSING_TARGET", "UNREACHABLE_NODE"} <= codes
+    assert {
+        "EMPTY_DIALOGUE_NODE_TEXT",
+        "EMPTY_DIALOGUE_CHOICE_TEXT",
+        "MISSING_DIALOGUE_NODE",
+        "UNREACHABLE_DIALOGUE_NODE",
+    } <= codes
 
 
 def test_editor_exports_playable_project(sample_project: Path) -> None:
@@ -815,6 +824,75 @@ def test_editor_exports_playable_project(sample_project: Path) -> None:
     export = controller.export_playable()
     assert (export / "game.json").exists()
     assert (export / "RUN.txt").exists()
+
+
+def test_runtime_launch_is_blocked_before_subprocess_on_errors(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    assert controller.current_scene is not None
+    controller.current_scene.npcs[0].dialogue_nodes[0].text = ""
+    spawned = False
+
+    def fake_popen(command):
+        nonlocal spawned
+        spawned = True
+        return command
+
+    monkeypatch.setattr("pce.editor.project_controller.subprocess.Popen", fake_popen)
+    with pytest.raises(ProjectValidationError) as excinfo:
+        controller.run_runtime()
+    assert any(issue.code == "EMPTY_DIALOGUE_NODE_TEXT" for issue in excinfo.value.issues)
+    assert not spawned
+
+
+def test_runtime_launch_allows_warnings(sample_project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    assert controller.current_scene is not None
+    controller.current_scene.npcs[0].dialogue_nodes.append(
+        controller.current_scene.npcs[0].dialogue_nodes[0].__class__(
+            id="optional", speaker="Dog", text="Optional branch"
+        )
+    )
+    commands = []
+    monkeypatch.setattr(
+        "pce.editor.project_controller.subprocess.Popen",
+        lambda command: commands.append(command),
+    )
+
+    controller.run_runtime()
+
+    assert len(commands) == 1
+    assert any(issue.code == "UNREACHABLE_DIALOGUE_NODE" for issue in controller.validate())
+
+
+def test_export_is_blocked_on_errors(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    assert controller.current_scene is not None
+    controller.current_scene.npcs[0].dialogue_nodes[0].text = ""
+
+    with pytest.raises(ProjectValidationError):
+        controller.export_playable()
+
+    assert not (sample_project / "exports").exists()
+
+
+def test_export_allows_unreachable_node_warning(sample_project: Path) -> None:
+    controller = ProjectController()
+    controller.open_project(sample_project)
+    assert controller.current_scene is not None
+    npc = controller.current_scene.npcs[0]
+    npc.dialogue_nodes.append(
+        npc.dialogue_nodes[0].__class__(id="bonus", speaker="Dog", text="Bonus")
+    )
+
+    export = controller.export_playable()
+
+    assert export.exists()
+    assert any(issue.code == "UNREACHABLE_DIALOGUE_NODE" for issue in controller.validate())
 
 
 def test_editor_main_help_still_works() -> None:

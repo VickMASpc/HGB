@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from pce.editor.panels.action_list_panel import ACTION_TYPES
 from pce.editor.panels.visual_editors import CONDITION_OPERATORS, CONDITION_TYPES, action_label
-from pce.shared.models import Action, Condition, DialogueChoice, NPC
+from pce.shared.models import Action, Condition, DialogueChoice, NPC, ValidationIssue
+from pce.shared.validation import validate_dialogue_graph
 
 DESTINATION_OPTIONS = ["Continue", "End conversation", "New branch"]
-
-
-@dataclass(frozen=True, slots=True)
-class DialogueValidationIssue:
-    code: str
-    message: str
-    node_id: str | None = None
-    choice_index: int | None = None
 
 
 def node_card_title(npc: NPC, node_id: str, *, simple: bool = True) -> str:
@@ -136,61 +127,12 @@ def choice_summary(choice: DialogueChoice, npc: NPC, *, simple: bool = True) -> 
     return f"{text} -> {target}{suffix}"
 
 
-def validate_dialogue_graph(npc: NPC) -> list[DialogueValidationIssue]:
-    issues: list[DialogueValidationIssue] = []
-    node_ids = {node.id for node in npc.dialogue_nodes}
-    if not npc.dialogue_nodes:
-        return [DialogueValidationIssue("NO_NODES", "This NPC has no conversation cards.")]
-
-    for node in npc.dialogue_nodes:
-        if not node.text.strip():
-            issues.append(DialogueValidationIssue("EMPTY_NODE_TEXT", "Conversation card text is empty.", node.id))
-        for index, choice in enumerate(node.choices):
-            if not choice.text.strip():
-                issues.append(
-                    DialogueValidationIssue("EMPTY_RESPONSE", "Response button text is empty.", node.id, index)
-                )
-            if choice.target and choice.target not in node_ids:
-                issues.append(
-                    DialogueValidationIssue(
-                        "MISSING_TARGET",
-                        f"Response points to missing card: {choice.target}.",
-                        node.id,
-                        index,
-                    )
-                )
-
-    reachable = _reachable_node_ids(npc)
-    for node in npc.dialogue_nodes:
-        if node.id not in reachable:
-            issues.append(
-                DialogueValidationIssue(
-                    "UNREACHABLE_NODE",
-                    "Conversation card is not reachable from the first card.",
-                    node.id,
-                )
-            )
-    return issues
-
-
-def format_validation_summary(issues: list[DialogueValidationIssue]) -> str:
+def format_validation_summary(issues: list[ValidationIssue]) -> str:
     if not issues:
         return "Conversation looks good."
-    lines = []
-    for issue in issues:
-        if issue.code == "EMPTY_NODE_TEXT":
-            lines.append("A line is empty.")
-        elif issue.code == "EMPTY_RESPONSE":
-            lines.append("A reply is empty.")
-        elif issue.code == "MISSING_TARGET":
-            lines.append("A reply points to a missing line.")
-        elif issue.code == "UNREACHABLE_NODE":
-            lines.append("A line cannot be reached from the conversation start.")
-        elif issue.code == "NO_NODES":
-            lines.append("This NPC has no conversation lines yet.")
-        else:
-            lines.append(issue.message)
-    return "\n".join(lines)
+    return "\n".join(
+        f"{issue.severity.value} {issue.code}: {issue.message}" for issue in issues
+    )
 
 
 def build_dialogue_workspace(dpg, app) -> None:
@@ -529,21 +471,3 @@ def _draw_dialogue_graph(dpg, npc: NPC) -> None:
             end = positions[choice.target]
             dpg.draw_line((start[0] + node_width, start[1] + 21), (end[0], end[1] + 21), color=(220, 180, 90), parent="dialogue_graph_overview")
     dpg.configure_item("dialogue_graph_overview", width=760, height=max(220, 70 + ((len(npc.dialogue_nodes) + 3) // 4) * 70))
-
-
-def _reachable_node_ids(npc: NPC) -> set[str]:
-    if not npc.dialogue_nodes:
-        return set()
-    node_by_id = {node.id: node for node in npc.dialogue_nodes}
-    reachable = {npc.dialogue_nodes[0].id}
-    pending = [npc.dialogue_nodes[0].id]
-    while pending:
-        node_id = pending.pop()
-        node = node_by_id.get(node_id)
-        if node is None:
-            continue
-        for choice in node.choices:
-            if choice.target and choice.target in node_by_id and choice.target not in reachable:
-                reachable.add(choice.target)
-                pending.append(choice.target)
-    return reachable

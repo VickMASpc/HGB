@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pce.runtime.engine import Engine
+from pce.shared.models import Action
 from pce.runtime.state import load_state, save_state
 from pce.shared.models import RuntimeState
 
@@ -33,3 +34,29 @@ def test_engine_starts_fresh_when_named_slot_is_missing(sample_project: Path) ->
     assert engine.scene_manager.current_scene_id == "town_square"
     assert engine.state.current_scene == "town_square"
     assert engine.player.position == (120, 390)
+
+
+def test_engine_load_clears_transient_runtime_state(sample_project: Path) -> None:
+    engine = Engine(sample_project)
+    engine.actions.start([Action(type="change_scene", scene="clubhouse", spawn="entrance")])
+    engine.state.variables["found_key"] = True
+    engine.state.inventory.append("clubhouse_key")
+    engine.state.object_enabled["town_square:mailbox_key"] = False
+    engine.save_slot("complete")
+
+    engine.actions.start([Action(type="move_player", path=[(500, 400)])])
+    engine.dialogue.say("Narrator", "stale")
+    engine.state.variables.clear()
+    engine.state.inventory.clear()
+    engine.state.object_enabled.clear()
+    engine.load_slot("complete")
+
+    assert engine.scene_manager.current_scene_id == "clubhouse"
+    assert engine.state.current_scene == "clubhouse"
+    assert engine.player.position == (120, 390)
+    assert engine.state.variables == {"found_key": True}
+    assert engine.state.inventory == ["clubhouse_key"]
+    assert engine.state.object_enabled == {"town_square:mailbox_key": False}
+    assert not engine.player.moving
+    assert not engine.actions.active
+    assert not engine.dialogue.active

@@ -255,6 +255,7 @@ def validate_scene(
                 issues.append(_issue(Severity.ERROR, "DUPLICATE_DIALOGUE_NODE", f"Duplicate dialogue node '{node_id}'.", scene_file, npc.id))
         for node in npc.dialogue_nodes:
             issues.extend(_validate_actions(scene_file, npc.id, node.actions, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
+            issues.extend(_validate_dialogue_node_effects(scene_file, npc.id, node.actions))
             for choice in node.choices:
                 if choice.target and choice.target not in node_ids:
                     issues.append(_issue(Severity.ERROR, "MISSING_DIALOGUE_NODE", f"Choice references missing dialogue node '{choice.target}'.", scene_file, npc.id))
@@ -270,6 +271,33 @@ def validate_scene(
             issues.append(_issue(Severity.ERROR, "MISSING_ITEM_DEFINITION", f"Scene item '{item.id}' references missing item '{item.item_id}'.", scene_file, item.id))
         issues.extend(_validate_actions(scene_file, item.id, item.on_click, scenes, spawn_ids, npc_ids, item_ids, scene_object_ids))
 
+    return issues
+
+
+def _validate_dialogue_node_effects(
+    scene_file: str,
+    object_id: str,
+    actions: list[Action],
+) -> list[ValidationIssue]:
+    """Restrict pre-display node effects to immediate, non-blocking state changes."""
+    issues: list[ValidationIssue] = []
+    supported = {"set_variable", "give_item", "remove_item", "set_object_enabled"}
+    for action in actions:
+        if action.type == "sequence":
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.actions))
+        elif action.type == "conditional":
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.if_actions))
+            issues.extend(_validate_dialogue_node_effects(scene_file, object_id, action.else_actions))
+        elif action.type not in supported:
+            issues.append(
+                _issue(
+                    Severity.ERROR,
+                    "UNSUPPORTED_DIALOGUE_NODE_EFFECT",
+                    f"Dialogue node effect '{action.type}' must be an immediate state action.",
+                    scene_file,
+                    object_id,
+                )
+            )
     return issues
 
 
@@ -370,4 +398,3 @@ def _valid_variable_name(value: str | None) -> bool:
 
 def has_errors(issues: list[ValidationIssue]) -> bool:
     return any(issue.severity == Severity.ERROR for issue in issues)
-

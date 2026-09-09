@@ -6,7 +6,7 @@ from pce.runtime.actions import ActionRunner, RuntimeContext
 from pce.runtime.dialogue import DialogueSystem
 from pce.runtime.player import Player
 from pce.runtime.scene_manager import SceneManager
-from pce.shared.models import Action, Condition, RuntimeState
+from pce.shared.models import Action, Condition, DialogueChoice, DialogueNode, RuntimeState
 from pce.shared.serialization import load_project, load_scenes
 
 
@@ -108,3 +108,80 @@ def test_conditional_action_uses_runtime_state(sample_project: Path) -> None:
     assert context.dialogue.current is not None
     assert context.dialogue.current.text == "Unlocked."
 
+
+def test_dialogue_node_effects_run_once_before_display(sample_project: Path) -> None:
+    runner, context = _runner(sample_project)
+    npc = context.current_scene.npcs[0]
+    npc.dialogue_nodes[0].actions = [
+        Action(type="set_variable", variable="entry", value="applied")
+    ]
+    runner.start([Action(type="dialogue", npc=npc.id, node="hello")])
+    assert context.state.variables["entry"] == "applied"
+    assert context.dialogue.current is not None
+    context.state.variables["entry"] = "not-repeated"
+    runner.update()
+    assert context.state.variables["entry"] == "not-repeated"
+
+
+def test_choice_effects_precede_target_node_effects(sample_project: Path) -> None:
+    runner, context = _runner(sample_project)
+    npc = context.current_scene.npcs[0]
+    npc.dialogue_nodes = [
+        DialogueNode(
+            id="first",
+            speaker="Dog",
+            text="First",
+            choices=[
+                DialogueChoice(
+                    text="Continue",
+                    target="second",
+                    actions=[Action(type="set_variable", variable="phase", value="choice")],
+                )
+            ],
+        ),
+        DialogueNode(
+            id="second",
+            speaker="Dog",
+            text="Second",
+            actions=[
+                Action(
+                    type="conditional",
+                    condition=Condition(type="variable", variable="phase", value="choice"),
+                    if_actions=[Action(type="set_variable", variable="order", value="correct")],
+                    else_actions=[Action(type="set_variable", variable="order", value="wrong")],
+                )
+            ],
+        ),
+    ]
+    runner.start([Action(type="dialogue", npc=npc.id, node="first")])
+    choice = context.dialogue.choose(0)
+    assert choice is not None and choice.target is not None
+    runner.start([*choice.actions, Action(type="dialogue", npc=npc.id, node=choice.target)])
+    assert context.state.variables["order"] == "correct"
+    assert context.dialogue.current is not None
+    assert context.dialogue.current.text == "Second"
+
+
+def test_nested_node_effects_preserve_authored_order(sample_project: Path) -> None:
+    runner, context = _runner(sample_project)
+    npc = context.current_scene.npcs[0]
+    npc.dialogue_nodes[0].actions = [
+        Action(type="set_variable", variable="step", value=1),
+        Action(
+            type="sequence",
+            actions=[
+                Action(
+                    type="conditional",
+                    condition=Condition(type="variable", variable="step", value=1),
+                    if_actions=[Action(type="set_variable", variable="step", value=2)],
+                ),
+                Action(
+                    type="conditional",
+                    condition=Condition(type="variable", variable="step", value=2),
+                    if_actions=[Action(type="set_variable", variable="step", value=3)],
+                ),
+            ],
+        ),
+    ]
+    runner.start([Action(type="dialogue", npc=npc.id, node="hello")])
+    assert context.state.variables["step"] == 3

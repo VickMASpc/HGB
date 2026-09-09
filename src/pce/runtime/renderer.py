@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pce.runtime.scene_runtime import npc_rect
-from pce.shared.models import ProjectConfig, SceneConfig
+from pce.runtime.scene_runtime import npc_rect, visible_items, visible_npcs
+from pce.runtime.state import is_object_enabled
+from pce.shared.models import ProjectConfig, RuntimeState, SceneConfig
 
 
 class Renderer:
@@ -40,6 +41,7 @@ class Renderer:
         choices: list[str],
         inventory: list[str],
         debug: bool,
+        state: RuntimeState | None = None,
     ) -> None:
         pygame = self.pygame
         background = self.backgrounds.get(scene.id)
@@ -51,7 +53,7 @@ class Renderer:
         else:
             self.screen.fill((30, 34, 42))
 
-        for npc in scene.npcs:
+        for npc in visible_npcs(scene, state):
             rect = npc_rect(npc)
             image = self._load_image(npc.sprite, (48, 72))
             if image:
@@ -59,7 +61,7 @@ class Renderer:
             else:
                 pygame.draw.rect(self.screen, (140, 92, 172), rect, border_radius=4)
 
-        for item in scene.items:
+        for item in visible_items(scene, state):
             image = self._load_item_image(item.item_id, scene)
             if image:
                 self.screen.blit(image, (item.rect[0], item.rect[1]))
@@ -73,7 +75,7 @@ class Renderer:
             pygame.draw.rect(self.screen, (45, 88, 168), (px - 20, py - 70, 40, 70), border_radius=4)
 
         if debug:
-            self._draw_debug(scene)
+            self._draw_debug(scene, state)
         if subtitle:
             self._draw_subtitle(*subtitle, choices)
         if inventory:
@@ -83,14 +85,18 @@ class Renderer:
     def _load_item_image(self, item_id: str, scene: SceneConfig) -> object | None:
         return self.item_sprites.get(item_id)
 
-    def _draw_debug(self, scene: SceneConfig) -> None:
+    def _draw_debug(self, scene: SceneConfig, state: RuntimeState | None) -> None:
         pygame = self.pygame
         for hotspot in scene.hotspots:
-            pygame.draw.rect(self.screen, (255, 212, 96), hotspot.rect, 2)
-            self._label(hotspot.id, (hotspot.rect[0], hotspot.rect[1] - 18), (255, 212, 96))
+            enabled = is_object_enabled(state, scene.id, hotspot.id, hotspot.enabled)
+            color = (255, 212, 96) if enabled else (110, 110, 110)
+            pygame.draw.rect(self.screen, color, hotspot.rect, 2)
+            self._label(hotspot.id, (hotspot.rect[0], hotspot.rect[1] - 18), color)
         for exit_data in scene.exits:
-            pygame.draw.rect(self.screen, (95, 196, 134), exit_data.rect, 2)
-            self._label(exit_data.id, (exit_data.rect[0], exit_data.rect[1] - 18), (95, 196, 134))
+            enabled = is_object_enabled(state, scene.id, exit_data.id)
+            color = (95, 196, 134) if enabled else (110, 110, 110)
+            pygame.draw.rect(self.screen, color, exit_data.rect, 2)
+            self._label(exit_data.id, (exit_data.rect[0], exit_data.rect[1] - 18), color)
             if len(exit_data.walk_path) > 1:
                 pygame.draw.lines(self.screen, (95, 196, 134), False, exit_data.walk_path, 3)
             for point in exit_data.walk_path:
@@ -121,4 +127,3 @@ class Renderer:
     def _draw_inventory(self, inventory: list[str]) -> None:
         surface = self.small_font.render("Inventory: " + ", ".join(inventory), True, (250, 250, 250))
         self.screen.blit(surface, (12, 10))
-

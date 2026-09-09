@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pce.shared.models import Action
 from pce.shared.serialization import load_project, load_scenes
 from pce.shared.validation import validate_project
 
@@ -59,3 +60,15 @@ def test_detects_invalid_variable_name(sample_project: Path) -> None:
     path = sample_project / "scenes/town_square.json"
     path.write_text(path.read_text(encoding="utf-8").replace('"variable": "found_key"', '"variable": "1bad"'), encoding="utf-8")
     assert "INVALID_VARIABLE_NAME" in _codes(sample_project)
+
+
+def test_rejects_blocking_dialogue_node_effect(sample_project: Path) -> None:
+    project = load_project(sample_project)
+    scenes = load_scenes(sample_project, project)
+    scenes["town_square"].npcs[0].dialogue_nodes[0].actions = [
+        Action(type="dialogue", npc="dog", node="hello")
+    ]
+
+    issues = validate_project(sample_project, project, scenes)
+
+    assert any(issue.code == "UNSUPPORTED_DIALOGUE_NODE_EFFECT" for issue in issues)

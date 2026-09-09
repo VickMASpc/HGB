@@ -61,3 +61,7 @@ class DialogueSystem:
             self.current = None
             self.choices = []
 
+    def reset(self) -> None:
+        self.queue = []
+        self.current = None
+        self.choices = []
